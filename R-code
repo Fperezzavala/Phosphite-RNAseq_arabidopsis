@@ -1,32 +1,16 @@
 library(tximport)
-library(clipr)
-library(gtools)
-library(plyr)
-library(viridis)
-library(gplots)
-library(heatmap3)
-library(textshape)
-library(reshape2)
-library(reshape)
-library(scales)
-library(pheatmap)
-library(rlang)
-library(ggvenn)
-library(agricolae)
-library(colorspace)
-library(ragg)
-library(cowplot)
-library(UpSetR)
-library(magrittr)
-library(dplyr)
-library(topGO)
 library(stringr)
-library(listr)
-library(edgeR)
-library(ggrepel)
-#library(santoku)
 library(IsoformSwitchAnalyzeR)
-library(stringr)
+library(edgeR)
+source("https://raw.githubusercontent.com/Fperezzavala/Functions_for_DEGs/main/R_funtions_for_DEG.R")
+library(ggvenn)
+library(topGO)
+library(extrafont)
+library(agricolae)
+library(reshape2)
+library(ggpubr)
+library(ggplotify)
+library(Cairo)
 
 # Load data #
 setwd("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG")
@@ -35,7 +19,7 @@ library_names <- read.csv("counts/Kallisto/samples.csv", header = TRUE)
 files_paths <- file.path(working_directory, "counts/Kallisto", c(library_names$countf))
 names(files_paths) <- library_names$library
 txi.kallisto <- tximport(files_paths, type = "kallisto", txOut = TRUE)
-head(txi.kallisto$counts)
+#head(txi.kallisto$counts)
 
 GeneAnnotation <- 
   data.frame(
@@ -66,9 +50,10 @@ DGE_matrix %<>% calcNormFactors()
 library_membership_matrix <- model.matrix(~0+group, data=DGE_matrix$samples)
 colnames(library_membership_matrix) <- unique(library_names$condition)
 DGE_matrix %<>% estimateDisp(library_membership_matrix)
-BCV <- estimateGLMCommonDisp(DGE_matrix, library_membership_matrix, verbose=TRUE)
+DGE_matrix$samples$group <- library_names$condition
 
-#   MDS   #
+
+#   MDS Supplementary 1   #
 color_handler = c()
 for( counter in 1:(max(library_groups))) {
   color_handler <- append(color_handler,
@@ -87,434 +72,368 @@ mds <-
           cex = 2
   )
 
-# HEATMAP #
+# make all posible pairwise comparisons
+all_pairwise_vector(DGE_matrix$samples$group) -> contrast_to_make_vector
+fit_model <- glmQLFit(DGE_matrix, DGE_matrix$design)
+get_pairwise_DEGs(DGE_matrix, contrast_to_make_vector, fit = fit_model, lfc = 0.26) -> data
+#summary of DEG
+for (i in 1:(data %>% len)){
+print(summary(decideTests(data[[i]]$glmTreat)))
+}
+
+#get lists of up and downregulated genes
+All_up <- NULL
+All_down <- NULL
+temporary_handler_1 <- NULL
+temporary_handler_2 <- NULL
+for (i in 1:(data %>% len)){
+get.rownames(decideTests(data[[i]]$glmTreat), 1) -> temporary_handler_1
+get.rownames(decideTests(data[[i]]$glmTreat), -1) -> temporary_handler_2
+All_down[[data[[i]]$Comparison]] <-  temporary_handler_1
+All_up[[data[[i]]$Comparison]] <- temporary_handler_2
+}
+
+#-Pi vs +Pi Figure S2 A
+CairoPNG(filename = "C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Sx_volcanoplot_LPvsHP.png",
+         device ="cairo_png", width = 420, height = 420, units = "px")
+volcano_plot(data$DEGs_in_lp_relative_to_hp$glmTreat, n_of_scales = 2, option1= "A", option2 = "G",
+             scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
+dev.off()
+#-Pi+Phi vs +Pi Figure S2 B
+CairoPNG(filename = "C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Sx_volcanoplot_LP+PhivsHP.png",
+         device ="cairo_png", width = 420, height = 420, units = "px")
+volcano_plot(data$DEGs_in_lp_phi_relative_to_hp$glmTreat, n_of_scales = 2, option1= "A", option2 = "G",
+             scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
+dev.off()
+
+#HPi+Phi vs HPi F1 panel A
+CairoPNG(filename = "C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/F2_volcanoplot_A_cairo.png",
+         device ="cairo_png", width = 420, height = 420, units = "px")
+volcano_plot(data$DEGs_in_hp_phi_relative_to_hp$glmTreat, n_of_scales = 2, option1= "A", option2 = "G",
+             scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
+dev.off()
+#LPi+Phi vs LPi F1 panel B
+CairoPNG(filename = "C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/F2_volcanoplot_B_cairo.png",
+         device ="cairo_png", width = 420, height = 420, units = "px")
+volcano_plot(data$DEGs_in_lp_phi_relative_to_lp$glmTreat, n_of_scales = 2, option1= "A", option2 = "G",
+             scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
+dev.off()
+
+#F2 panel C
+CairoPNG(filename = "C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/F2_volcanoplot_D_cairo.png",
+         device ="cairo_png", width = 420, height = 420, units = "px")
+ggvenn(list(`LPi+Phi VS LPi` = data$DEGs_in_lp_phi_relative_to_lp$glmTreat %>% decideTests() %>% get.rownames(-1),
+            `HPi+Phi VS HPi` = data$DEGs_in_hp_phi_relative_to_hp$glmTreat %>% decideTests() %>% get.rownames(-1)
+),
+fill_alpha = 0.5,
+stroke_color = "#00000033",
+stroke_size = 1,
+fill_color = viridis(2, end = 0.6, begin = 0.3, option = "G"),
+text_color = "#000000CC",
+text_size = 6
+)
+dev.off()
+
+#F2 panel D
+CairoPNG(filename = "C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/F2_volcanoplot_C_cairo.png",
+         device ="cairo_png", width = 420, height = 420, units = "px")
+ggvenn(list(`LPi+Phi VS LPi` = data$DEGs_in_lp_phi_relative_to_lp$glmTreat %>% decideTests() %>% get.rownames(1),
+            `HPi+Phi VS HPi` = data$DEGs_in_hp_phi_relative_to_hp$glmTreat %>% decideTests() %>% get.rownames(1)
+            ),
+       fill_alpha = 0.5,
+       stroke_color = "#00000033",
+       stroke_size = 1,
+       fill_color = viridis(2, end = 0.6, begin = 0.3, option = "F"),
+       text_color = "#000000CC",
+       text_size = 6
+       )
+dev.off()
+
+# get all pairwise GO comparisons 
+go_pairwise_vector_up <- c()
+go_pairwise_vector_down <- c()
+for (i in 1:len(contrast_to_make_vector)){
+  table <- decideTests(data[[i]]$glmTreat) %>% get.rownames(1) %>%  get_enriched_go_table()
+  assign(paste0("gos_", data[[i]]$Comparison, "_up"), table)
+  go_pairwise_vector_up %<>% append(paste0("gos_", data[[i]]$Comparison, "_up"))
+  table <- decideTests(data[[i]]$glmTreat) %>% get.rownames(-1) %>%  get_enriched_go_table()
+  assign(paste0("gos_", data[[i]]$Comparison, "_down"), table)
+  go_pairwise_vector_down %<>% append(paste0("gos_", data[[i]]$Comparison, "_down"))
+}
+
+#get all pairwise Go plots
+for(i in 1:len(go_pairwise_vector_up)){
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots pairwise/", go_pairwise_vector_up[i], ".png"),
+           width = 600, height = 600, units = 'px')
+  p <- bubbleplot(get(go_pairwise_vector_up[i]), color = "A", Terms = 25) + scale_x_discrete(position = "top") 
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+}
+
+for(i in 1:len(go_pairwise_vector_down)){
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots pairwise/", go_pairwise_vector_down[i], ".png"),
+           width = 600, height = 600, units = 'px')
+  p <- bubbleplot(get(go_pairwise_vector_down[i]), color = "G", Terms = 25) +
+    guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+}
+
+# calculate Z-score of logCPM #
 z_score_of_CPM <- cpm(DGE_matrix, prior.count = 2, log = TRUE)
-z_score_of_CPM %<>% t() %>% scale() %>% t() %>% as.data.frame() %>% cluster_matrix(dim = "row", method = "complete")
+z_score_of_CPM <- t(scale(t(z_score_of_CPM)))
+z_score_of_CPM <- as.data.frame(z_score_of_CPM)
 mean_z_score_of_CPM <- c()
 mean_z_score_of_CPM$hp <- rowMeans(z_score_of_CPM[1:3])
 mean_z_score_of_CPM$lp <- rowMeans(z_score_of_CPM[4:6])
 mean_z_score_of_CPM$lp_phi <- rowMeans(z_score_of_CPM[7:9])
 mean_z_score_of_CPM$hp_phi <- rowMeans(z_score_of_CPM[10:12])
 mean_z_score_of_CPM <- as.data.frame(mean_z_score_of_CPM)
-mean_z_score_of_CPM <- mean_z_score_of_CPM[,c("lp", "lp_phi", "hp", "hp_phi")]
-
-#Get All pairwise comparisons
-
-all_combinations_matrix <- combinations(4, 2, unique(library_names$condition), repeats.allowed = FALSE)
-pairwise_comparisons_direction_1 <- paste0(all_combinations_matrix[,1],
-                                           " - ",
-                                           all_combinations_matrix[,2])
-pairwise_comparisons_direction_2 <- paste0(all_combinations_matrix[,2],
-                                           " - ",
-                                           all_combinations_matrix[,1])
-all_pairwise_comparisons <- append(pairwise_comparisons_direction_1, pairwise_comparisons_direction_2)
-
-fit <- glmQLFit(DGE_matrix, library_membership_matrix)
-pairwise_vector <- c()
-for(counter in 1:12){
-  contrast <- makeContrasts(all_pairwise_comparisons[counter], levels = library_membership_matrix)
-  lrt <- glmQLFTest(fit, contrast = contrast)
-  if(counter <= 6){
-    assign(paste0(all_combinations_matrix[counter,1],"VS",all_combinations_matrix[counter,2]), decideTests(lrt))
-    assign(paste0(all_combinations_matrix[counter,1],"VS",all_combinations_matrix[counter,2],"_lrt"), lrt)
-    pairwise_vector %<>% append(paste0(all_combinations_matrix[counter,1],"VS",all_combinations_matrix[counter,2]))
-    print(counter)
-  }  else {
-    assign(paste0(all_combinations_matrix[counter-6,2],"VS",all_combinations_matrix[counter-6,1]), decideTests(lrt))
-    assign(paste0(all_combinations_matrix[counter-6,2],"VS",all_combinations_matrix[counter-6,1],"_lrt"), lrt)
-    pairwise_vector %<>% append(paste0(all_combinations_matrix[counter-6,2],"VS",all_combinations_matrix[counter-6,1]))
-    print(counter)
-  }
+mean_z_score_of_CPM <- mean_z_score_of_CPM[,c("hp", "hp_phi", "lp", "lp_phi")]
+colnames(mean_z_score_of_CPM) <- c("HPi", "HPi+Phi", "LPi", "LPi+Phi")
+### function for biosinthesis pathways
+signaling_heatmap <- function(matrix = ABA.route.matrix[c(1,2),], main_title = "ABA biosynthesis pathway", labels_row = IDs$tair_symbol) {
+ComplexHeatmap::pheatmap(t(matrix),
+                         cluster_rows = FALSE,
+                         cluster_cols = FALSE,
+                         color = c(viridis(12, option = "G", end = 0.7, begin = 0.3, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
+                         border_color = NA,
+                         main = main_title,
+                         show_colnames = T,
+                         cellwidth = 24,
+                         cellheight = 24,
+                         labels_row = labels_row,
+                         fontfamily = "Arial",
+                         fontfamily_row = "Arial",
+                         fontfamily_col = "Arial",
+                         fontsize_row = 20,
+                         fontsize_col = 20,
+                         legend = FALSE,
+                         clustering_method = "average")
 }
-hormone_genes <- read.csv("genelists/arabidopsis hormone DB.csv", header = TRUE)
-ABA_genes <- hormone_genes %>% dplyr::filter(Related.Hormone == "abscisic acid")
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(ABA_genes[c(-1,-251,-252),1])),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "ABA_genes",
-         show_colnames = F,
-         fontsize_row = 18,
-         cutree_cols = 4,
-         clustering_method = "average")
-plot_z_raincloud_of_genes(ABA_genes[c(-1,-251,-252),1], mean_z_score_of_CPM)
 
-ethylene_genes <- hormone_genes %>% dplyr::filter(Related.Hormone == "ethylene")
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(ethylene_genes[c(-149:-156),1])),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "ethylene_genes",
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average")
-plot_z_raincloud_of_genes(ethylene_genes[c(-149:-156),1], mean_z_score_of_CPM)
+### ABA heatmaps Figure 3A the triangles were added in powerpoint acording to the next results
+ABA_biosynthesis_genes <- c(
+  "AT5G67030", "AT1G67080", "AT1G78390",
+  "AT3G14440", "AT4G18350", "AT1G52340",
+  "AT2G27150", "AT3G43600"
+  )
+decideTests(glmLRT(fit_model, contrast = makeContrasts(hp_phi-hp, levels=DGE_matrix$design)))[ABA_biosynthesis_genes,]
 
-jasmonic_acid_genes <- hormone_genes %>% dplyr::filter(Related.Hormone == "jasmonic acid")
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(jasmonic_acid_genes[c(-147:-152),1])),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "jasmonic acid",
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average")
-plot_z_raincloud_of_genes(jasmonic_acid_genes[c(-147:-152),1], mean_z_score_of_CPM)
+mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% ABA_biosynthesis_genes),] %>% t() -> ABA.route.matrix
+ABA.route.matrix <- ABA.route.matrix[, ABA_biosynthesis_genes]
+GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(ABA.route.matrix)),c(1,4)] -> IDs
+IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
+IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
+IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(ABA.route.matrix)))
 
-salicylic_acid_genes <- hormone_genes %>% dplyr::filter(Related.Hormone == "salicylic acid")
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(salicylic_acid_genes[c(-116),1])),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "salicylic acid",
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average")
-plot_z_raincloud_of_genes(salicylic_acid_genes[c(-116),1], mean_z_score_of_CPM)
-#cellular response to phosphate starvation
-get_genes_of_a_go("GO:0016036") -> data1
-GO.heatmap(GO = "GO:0016036")
-plot_z_raincloud_of_genes(data1$ensembl_gene_id,mean_z_score_of_CPM)
-#phosphate ion transport
-get_genes_of_a_go("GO:0006817") -> data1
-GO.heatmap(GO = "GO:0006817")
-plot_z_raincloud_of_genes(data1$ensembl_gene_id,mean_z_score_of_CPM)
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/ABA biosinthesis pathway.png",
+    width = 300, height = 600, units = 'px')
+signaling_heatmap(matrix = ABA.route.matrix[c(1,2),], main_title = "ABA biosynthesis pathway")
+dev.off()
+
+### ABA heatmaps Figure 3B
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/ABA heatmap.png",
+    width = 1400, height = 600, units = 'px')
+GO.heatmap(GO = "GO:0009789", mean_z_score_of_CPM[,c(1,2)], cellwidth = 20, cellheight = 50, fontsize_row = 24, fontsize_col = 18)
+dev.off()
+
+### SA heatmaps Figure 3C the triangles were added in powerpoint acording to the next results
+SA_biosynthesis_genes <- c(
+  "AT4G33510", "AT4G39980", "AT1G22410",
+  "AT5G66120", "AT3G06350", "AT2G21940",
+  "AT4G39540", "AT2G45300", "AT1G48860",
+  "AT1G48850", "AT1G74710", "AT1G18870"
+)
+
+decideTests(glmLRT(fit_model, contrast = makeContrasts(hp_phi-hp, levels=DGE_matrix$design)))[SA_biosynthesis_genes,] %>% as.data.frame()
+
+mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% SA_biosynthesis_genes),] %>% t() -> SA.route.matrix
+SA.route.matrix <- SA.route.matrix[, SA_biosynthesis_genes]
+
+GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(SA.route.matrix)),c(1,4)] -> IDs
+IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
+IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
+IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(SA.route.matrix)))
+IDs %<>% mutate(IDs, ID = case_when(
+  IDs$tair_symbol == "" ~ ensembl_gene_id,
+  IDs$tair_symbol != "" ~ tair_symbol
+)
+)
+IDs$ID[11] <- "ICS1"
+
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/SA biosinthesis pathway.png",
+    width = 300, height = 600, units = 'px')
+signaling_heatmap(matrix = SA.route.matrix[c(1,2),], main_title = "SA biosynthesis pathway", labels_row = IDs$ID)
+dev.off()
+### SA heatmaps Figure 3D
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/SA heatmap.png",
+    width = 1400, height = 600, units = 'px')
+GO.heatmap(GO = "GO:0009627", mean_z_score_of_CPM[,c(1,2)], cellwidth = 15, cellheight = 50, fontsize_row = 24, fontsize_col = 18)
+dev.off()
+
+### JA heatmaps Figure 3E the triangles were added in powerpoint acording to the next results
+JA_biosynthesis_genes <- c(
+  "AT1G72520", "AT3G45140", "AT5G42650",
+  "AT3G25770", "AT2G06050", "AT1G20510",
+  "AT4G16760", "AT4G29010", "AT2G33150"
+)
+decideTests(glmLRT(fit_model, contrast = makeContrasts(hp_phi-hp, levels=DGE_matrix$design)))[JA_biosynthesis_genes,] %>% as.data.frame()
+
+mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% JA_biosynthesis_genes),] %>% t() -> JA.route.matrix
+JA.route.matrix <- JA.route.matrix[, JA_biosynthesis_genes]
+GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(JA.route.matrix)),c(1,4)] -> IDs
+IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
+IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
+IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(JA.route.matrix)))
+IDs %<>%   mutate(IDs, ID = case_when(
+  IDs$tair_symbol == "" ~ ensembl_gene_id,
+  IDs$tair_symbol != "" ~ tair_symbol
+)
+)
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/JA biosinthesis pathway.png",
+    width = 300, height = 600, units = 'px')
+signaling_heatmap(matrix = JA.route.matrix[c(1,2),], main_title = "JA biosynthesis pathway", labels_row = IDs$ID)
+dev.off()
+
+###JA heatmaps Figure 3F
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/JA heatmap.png",
+    width = 1400, height = 600, units = 'px')
+GO.heatmap(GO = "GO:0009867", mean_z_score_of_CPM[,c(1,2)], cellwidth = 11, cellheight = 25, fontsize_row = 20, fontsize_col = 13)
+dev.off()
 
 
+### local and systemic Heatmaps and rain plots F4
+rain_and_heat <- function(data = mean_z_score_of_CPM, list_of_genes = local_PSR_up_low_pi_up, main ="local_PSR"){
+  ComplexHeatmap::pheatmap(data[which(rownames(data) %in% c(list_of_genes)),] %>% t(),
+                           legend = FALSE,
+                           cluster_rows = FALSE,
+                           c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
+                           border_color = NA,
+                           show_colnames = T,
+                           show_rownames = F,
+                           fontsize_row = 18,
+                           clustering_method = "average", 
+                           main = main) -> p1
+  
+  plot_z_raincloud_of_genes(list_of_genes, data) -> p2
+  ggarrange(p2, as.grob(p1)) -> plot_1_2
+  return(plot_1_2)
+}
+local_PSR_up <- read.csv("genelists/PSR_Thibaud/local_PSR_up.txt", header = FALSE)
+local_PSR_up_low_pi_up <- decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(local_PSR_up$V1)
 
+
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/local_PSR.png",
+    width = 600, height = 600, units = 'px')
+rain_and_heat(data = mean_z_score_of_CPM, list_of_genes = local_PSR_up_low_pi_up, main ="local_PSR")
+dev.off()
+
+systemic_PSR_up <- read.csv("genelists/PSR_Thibaud/systemic_PSR_up.txt", header = FALSE)
+systemic_PSR_up_low_pi_up <- decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(systemic_PSR_up$V1)
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/systemic_PSR.png",
+    width = 600, height = 600, units = 'px')
+rain_and_heat(data = mean_z_score_of_CPM, list_of_genes = systemic_PSR_up_low_pi_up, main ="systemic_PSR")
+dev.off()
+
+
+### STOP1 and PHR1/PHL1 targets Heatmaps and rain plots F5
 STOP1_targets <- read.csv("genelists/STOP1_targets_cistrome_ampDAP.txt", header = FALSE)
-STOP1_targets_in_low_Pi_up <- lpVShp %>% get.rownames(1) %>% intersect(STOP1_targets$V1)
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(STOP1_targets_in_low_Pi_up)),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "STOP1_targets_in_low_Pi",
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average") 
-plot_z_raincloud_of_genes(STOP1_targets_in_low_Pi_up, mean_z_score_of_CPM)
-
+STOP1_targets_in_low_Pi_up <- decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(STOP1_targets$V1)
+downregulated_STOP_in_LPhi <- decideTests(data$DEGs_in_lp_phi_relative_to_lp$glmTreat) %>% get.rownames(-1) %>% intersect(STOP1_targets_in_low_Pi_up)
+Upregulated_STOP_in_HPhi <- decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(STOP1_targets_in_low_Pi_up)
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/STOP1_targets.png",
+    width = 600, height = 600, units = 'px')
+#figure 5A
+rain_and_heat(data = mean_z_score_of_CPM, list_of_genes = STOP1_targets_in_low_Pi_up, main ="STOP1_targets")
+dev.off()
 
 
 PHL1_targets <- read.csv("genelists/PHL1_targets_cistrome_DAP.txt", header = FALSE)
-PHL1_targets_low_pi_up <- lpVShp %>% get.rownames(1) %>% intersect(PHL1_targets$V1)
+PHL1_targets_low_pi_up <- decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(PHL1_targets$V1)
 PHR1_targets <- read.csv("genelists/PHR1_targets_CHIPseq.txt", header = FALSE)
-PHR1_targets_low_pi_up <- lpVShp %>% get.rownames(1) %>% intersect(PHR1_targets$V1)
+PHR1_targets_low_pi_up <- decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(PHR1_targets$V1)
 PHR1_and_PHL1_targets_low_pi_up <- union(PHL1_targets_low_pi_up, PHR1_targets_low_pi_up)
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(PHR1_and_PHL1_targets_low_pi_up)),] %>% t(),
-         cluster_rows = FALSE,
-         c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average", 
-         main = "PHR1_and_PHL1_targets_low_pi")
-plot_z_raincloud_of_genes(PHR1_and_PHL1_targets_low_pi_up, mean_z_score_of_CPM)
+downregulated_PHR1_and_PHL1_in_Phi <- decideTests(data$DEGs_in_lp_phi_relative_to_lp$glmTreat) %>% get.rownames(-1) %>% intersect(PHR1_and_PHL1_targets_low_pi_up)
+Upregulated_STOP_in_HPhi <- decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(PHR1_and_PHL1_targets_low_pi_up)
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/PHR1_and_PHL1_targets.png",
+    width = 600, height = 600, units = 'px')
+#figure 5b
+rain_and_heat(data = mean_z_score_of_CPM, list_of_genes = PHR1_targets_low_pi_up, main ="PHR1_targets")
+dev.off()
 
-local_PSR_up <- read.csv("genelists/PSR_Thibaud/local_PSR_up.txt", header = FALSE)
-local_PSR_up_low_pi_up <- lpVShp %>% get.rownames(1) %>% intersect(local_PSR_up$V1)
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(local_PSR_up_low_pi_up)),] %>% t(),
-         cluster_rows = FALSE,
-         c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average", 
-         main = "local_PSR")
+STOP1_signaling_pathway <- c("AT1G67940", "AT2G37330", "AT4G04920", "AT1G34370",
+                             "AT5G01720", "AT5G27920", "AT1G08430", "AT5G23630",
+                             "AT1G23010", "AT1G71040", "AT1G63245", "AT2G43790")
+decideTests(glmLRT(fit_model, contrast = makeContrasts(lp_phi-lp, levels=DGE_matrix$design)))[STOP1_signaling_pathway,] %>% as.data.frame()
 
-plot_z_raincloud_of_genes(local_PSR_up_low_pi_up, mean_z_score_of_CPM)
+mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% STOP1_signaling_pathway),] %>% t() -> local.PSR.matrix
+local.PSR.matrix <- local.PSR.matrix[,STOP1_signaling_pathway]
+GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(local.PSR.matrix)),c(1,4)] -> IDs
+IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
+IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
+IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(local.PSR.matrix)))
+IDs %<>%   mutate(IDs, ID = case_when(
+  IDs$tair_symbol == "" ~ ensembl_gene_id,
+  IDs$tair_symbol != "" ~ tair_symbol
+)
+)
+IDs$ID[3] <- "MED16"
+IDs$ID[5] <- "RAE1"
+IDs$ID[6] <-"RAH1"
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/local PSR pathway.png",
+    width = 300, height = 600, units = 'px')
+#figure 5C
+signaling_heatmap(matrix = local.PSR.matrix[c(3,4),], main_title = "Local PSR signaling pathway", labels_row = IDs$ID) 
+dev.off()
 
+PHR1_signaling_pathway <- c("AT5G60410", "AT5G16760", "AT5G42810", "AT5G15070",
+                            "AT3G01310", "AT4G28610", "AT5G29000", "AT3G24120",
+                            "AT5G20150", "AT2G26660", "AT2G45130", "AT5G15330",
+                            "AT2G33770", "AT5G43350", "AT1G02860")
+decideTests(glmLRT(fit_model, contrast = makeContrasts(lp_phi-lp, levels=DGE_matrix$design)))[PHR1_signaling_pathway,] %>% as.data.frame()
 
-systemic_PSR_up <- read.csv("genelists/PSR_Thibaud/systemic_PSR_up.txt", header = FALSE)
-systemic_PSR_up_low_pi_up <- lpVShp %>% get.rownames(1) %>% intersect(systemic_PSR_up$V1)
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% unlist(systemic_PSR_up_low_pi_up)),] %>% t(),
-         cluster_rows = FALSE,
-         c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average",
-         main = "systemic_PSR_up_low_pi_up")
-
-plot_z_raincloud_of_genes(systemic_PSR_up_low_pi_up, mean_z_score_of_CPM)
+mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% PHR1_signaling_pathway),] %>% t() -> systemic.PSR.matrix
+systemic.PSR.matrix <- systemic.PSR.matrix[,PHR1_signaling_pathway]
+GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(systemic.PSR.matrix)),c(1,4)] -> IDs
+IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
+IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
+IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(systemic.PSR.matrix)))
+IDs %<>%   mutate(IDs, ID = case_when(
+  IDs$tair_symbol == "" ~ ensembl_gene_id,
+  IDs$tair_symbol != "" ~ tair_symbol
+)
+)
+IDs$ID[2] <- "ITPK1"
+IDs$ID[4] <- "VIH1"
+IDs$ID[5] <- "VIH2"
+IDs$ID[8] <- "PHL2"
+IDs$ID[13] <- "PHO2"
+#figure 5D
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/systemic PSR pathway.png",
+    width = 300, height = 600, units = 'px')
+signaling_heatmap(matrix = systemic.PSR.matrix[c(3,4),], main_title = "Systemic PSR signaling pathway", labels_row = IDs$ID) 
+dev.off()
 
 low_Pi_genes <- list(PHR1_and_PHL1_targets_low_pi_up = c(PHR1_and_PHL1_targets_low_pi_up),
                      STOP1_targets_in_low_Pi_up = c(STOP1_targets_in_low_Pi_up),
                      systemic_PSR_up_low_pi_up = c(systemic_PSR_up_low_pi_up),
                      local_PSR_up_low_pi_up = c(local_PSR_up_low_pi_up)
 )
+CairoPNG("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/venn of know pathways.png",
+         width = 500, height = 500, units = 'px')
 ggvenn(low_Pi_genes, fill_color = viridis(4, end = 0.95, begin = 0.075, option = "E"), 
        fill_alpha = 0.6,
-       stroke_color = darken(viridis(1), 0.4),
+       stroke_color = colorspace::darken(viridis(1), 0.4),
        text_color = "#000000CC",
        text_size = 8,
        stroke_size = 1,
        show_percentage = F
 )
-
-non_STOP1_or_PHR1_targets_low_pi <- lpVShp %>% get.rownames(1) %>% setdiff(union(local_PSR_up_low_pi_up,
-                                                                                 union(systemic_PSR_up_low_pi_up,
-                                                                                 union(PHR1_and_PHL1_targets_low_pi_up, STOP1_targets_in_low_Pi_up )
-                                                                                )
-                                                                                )
-                                                                           )
-write.csv(non_STOP1_or_PHR1_targets_low_pi, "genelists/other_upregulated_genes.csv")
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(non_STOP1_or_PHR1_targets_low_pi)),] %>% t(),
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average",
-         cluster_rows = FALSE,
-         main = "non_STOP1_or_PHR1_targets_low_pi")
-
-plot_z_raincloud_of_genes(non_STOP1_or_PHR1_targets_low_pi, mean_z_score_of_CPM)
-
-
-PHR1vennPHL1 <- list(PHL1_targets_low_pi_up = c(PHL1_targets_low_pi_up),
-                    PHR1_targets_low_pi_up = c(PHR1_targets_low_pi_up)
-                    )
-
-ggvenn(PHR1vennPHL1, fill_color = viridis(2, end = 0.95, begin = 0.075), 
-       fill_alpha = 0.6,
-       stroke_color = darken(viridis(1), 0.4),
-       text_color = "#000000CC",
-       text_size = 12,
-       stroke_size = 1,
-)
-
-ggvenn(list(lpVShp = lpVShp %>% get.rownames(1),
-            lp_phiVShp = lp_phiVShp %>% get.rownames(1),
-            hp_phiVShp = hp_phiVShp %>% get.rownames(1)
-            ),
-       fill_alpha = 0.5,
-       stroke_color = "#00000033",
-       stroke_size = 1,
-       fill_color = viridis(3, end = 0.95, begin = 0.075),
-       text_color = "#000000CC",
-       text_size = 6
-       )
-ggvenn(list(lp_phiVSlp = lp_phiVSlp %>% get.rownames(1),
-            hp_phiVShp = hp_phiVShp %>% get.rownames(1)
-),
-fill_alpha = 0.5,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(3, end = 0.95, begin = 0.075),
-text_color = "#000000CC",
-text_size = 6
-)
-ggvenn(list(lp_phiVSlp = lp_phiVSlp %>% get.rownames(-1),
-            hp_phiVShp = hp_phiVShp %>% get.rownames(-1)
-),
-fill_alpha = 0.5,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(2, option = "A", end = 0.95, begin = 0.075),
-text_color = "#000000CC",
-text_size = 6
-)
-{
-#lpVShp_unique_up
-GOs_plot <-
-  bubbleplot(
-    get_enriched_go_table(
-      dplyr::setdiff(get.rownames(lpVShp,1), union(get.rownames(lp_phiVSlp,1),get.rownames(hp_phiVShp,1)))
-      ),
-    color = "A", Terms = 25
-    )
-svg(paste0(working_directory, "/GOs plots F2/F10 v2/lpVShp_unique_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-#lpVShp_unique_down
-GOs_plot <-
-  bubbleplot(
-    get_enriched_go_table(
-      dplyr::setdiff(get.rownames(lpVShp,-1), union(get.rownames(lp_phiVSlp,-1),get.rownames(hp_phiVShp,-1)))
-    ),
-    color = "G", Terms = 25
-  )
-svg(paste0(working_directory, "/GOs plots F2/F10 v2/lpVShp_unique_down", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-} #1
-{
-  #lp_phiVSlp_unique_up
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        dplyr::setdiff(get.rownames(lp_phiVSlp,1), union(get.rownames(lpVShp,1),get.rownames(hp_phiVShp,1)))
-      ),
-      color = "A", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/lp_phiVSlp_unique_up", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-  #lp_phiVSlp_unique_down
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        dplyr::setdiff(get.rownames(lp_phiVSlp,-1), union(get.rownames(lpVShp,-1),get.rownames(hp_phiVShp,-1)))
-      ),
-      color = "G", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/lp_phiVSlp_unique_down", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off() 
-} #2
-{
-  #hp_phiVShp_unique_up
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        dplyr::setdiff(get.rownames(hp_phiVShp,1), union(get.rownames(lpVShp,1),get.rownames(lp_phiVSlp,1)))
-      ),
-      color = "A", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/hp_phiVShp_unique_up", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-  #hp_phiVShp_unique_down
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        dplyr::setdiff(get.rownames(hp_phiVShp,-1), union(get.rownames(lpVShp,-1),get.rownames(lp_phiVSlp,-1)))
-      ),
-      color = "G", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/hp_phiVShp_unique_down", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off() 
-} #3
-{
-  #hp_phiVShp_unique_up
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        (dplyr::intersect(get.rownames(hp_phiVShp,1), get.rownames(lpVShp,1)) %>% setdiff(get.rownames(lp_phiVSlp,1)))
-      ),
-      color = "A", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/hp_phiVShp_inter_lpVShp_up", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-  #hp_phiVShp_unique_down
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        (dplyr::intersect(get.rownames(hp_phiVShp,-1), get.rownames(lpVShp,-1)) %>% setdiff(get.rownames(lp_phiVSlp,-1)))
-      ),
-      color = "G", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/hp_phiVShp_inter_lpVShp_down", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off() 
-} #4
-{
-#lpVShp_intersecct lp_phiVSlp - hp_phiVShp_up
-GOs_plot <-
-  bubbleplot(
-    get_enriched_go_table(
-      dplyr::intersect(get.rownames(lpVShp,1),get.rownames(lp_phiVSlp,1)) %>% dplyr::setdiff(get.rownames(hp_phiVShp,1))
-    ),
-    color = "A", Terms = 25
-  )
-svg(paste0(working_directory, "/GOs plots F2/F10 v2/lpVShp_intersect_lp_phiVSlp-hp_phiVShp_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-#lpVShp_intersecct lp_phiVSlp - hp_phiVShp_down
-get_enriched_go_table(
-      dplyr::intersect(get.rownames(lpVShp,-1),get.rownames(lp_phiVSlp,-1)) %>% dplyr::setdiff(get.rownames(hp_phiVShp,-1))
-    ) -> data2
-data2$Term <- as.character(data2$Term)
-data2$Term[13] <- paste0(data2$Term[13],".")
-data2$Term <- factor(data2$Term, levels=rev(unique(data2$Term)))
-GOs_plot <- bubbleplot(
-  data2, color = "G", Terms = 25
-)
-svg(paste0(working_directory, "/GOs plots F2/F10 v2/lpVShp_intersect_lp_phiVSlp-hp_phiVShp_down", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-} #5
-{
-  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_up
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        dplyr::intersect(get.rownames(lp_phiVSlp,1),get.rownames(hp_phiVShp,1)) %>% dplyr::setdiff(get.rownames(lpVShp,1))
-      ),
-      color = "A", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/lp_phiVShp_phi_intersect_lp_phiVSlp-hp_phiVShp_up", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_down
-  get_enriched_go_table(
-    dplyr::intersect(get.rownames(lp_phiVSlp,-1),get.rownames(hp_phiVShp,-1)) %>% dplyr::setdiff(get.rownames(lpVShp,-1))
-  ) -> data2
-  data2$Term <- as.character(data2$Term)
-  data2$Term[13] <- paste0(data2$Term[13],".")
-  data2$Term <- factor(data2$Term, levels=rev(unique(data2$Term)))
-  GOs_plot <- bubbleplot(
-    data2, color = "G", Terms = 25
-  )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/lp_phiVShp_phi_intersect_lp_phiVSlp-hp_phiVShp_down", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-} #6
-{
-  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_up
-  GOs_plot <-
-    bubbleplot(
-      get_enriched_go_table(
-        dplyr::intersect(get.rownames(lp_phiVSlp,1),get.rownames(hp_phiVShp,1)) %>% dplyr::intersect(get.rownames(lpVShp,1))
-      ),
-      color = "A", Terms = 25
-    )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/all_intersect_up", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_down
-  get_enriched_go_table(
-    dplyr::intersect(get.rownames(lp_phiVSlp,-1),get.rownames(hp_phiVShp,-1)) %>% dplyr::intersect(get.rownames(lpVShp,-1))
-  ) -> data2
-  data2$Term <- as.character(data2$Term)
-  data2$Term[13] <- paste0(data2$Term[13],".")
-  data2$Term <- factor(data2$Term, levels=rev(unique(data2$Term)))
-  GOs_plot <- bubbleplot(
-    data2, color = "G", Terms = 25
-  )
-  svg(paste0(working_directory, "/GOs plots F2/F10 v2/all_intersect_down", ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-} #7
-
-
-
-#other_genes
-  GOs_plot <-
-  bubbleplot(
-    get_enriched_go_table(
-      non_STOP1_or_PHR1_targets_low_pi
-    ),
-    color = "A", Terms = 25
-  )
-svg(paste0(working_directory, "/GOs plots F2/other_genes_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
 dev.off()
 
-ggvenn(list(lpVShp = lpVShp %>% get.rownames(-1),
-            lp_phiVShp = lp_phiVShp %>% get.rownames(-1),
-            hp_phiVShp = hp_phiVShp %>% get.rownames(-1)
-            ),
-       fill_alpha = 0.5,
-       stroke_color = "#00000033",
-       stroke_size = 1,
-       fill_color = viridis(3, end = 0.85, begin = 0.075, option = "B"),
-       text_color = "#000000CC",
-       text_size = 6
-       )
-
+#figure 5E
 ggvenn(list(PHR1_PHL1_targets = PHR1_and_PHL1_targets_low_pi_up,
             STOP1_targets = STOP1_targets_in_low_Pi_up,
             PSR_Systemic_genes = systemic_PSR_up_low_pi_up,
@@ -527,986 +446,420 @@ fill_color = viridis(4, end = 0.85, begin = 0.075, option = "E"),
 text_color = "#000000CC",
 text_size = 6
 )
-
-list_of_up_interactions <- list(lpVShp = lpVShp %>% get.rownames(1),
-                                lp_phiVShp = lp_phiVShp %>% get.rownames(1),
-                                hp_phiVShp = hp_phiVShp %>% get.rownames(1),
-                                lpVShp_phi = lpVShp_phi %>% get.rownames(1),
-                                lp_phiVShp_phi = lp_phiVShp_phi %>% get.rownames(1),
-                                lpVSlp_phi = lpVSlp_phi %>% get.rownames(1)
-                                )
-upset(fromList(list_of_up_interactions),
-      order.by = "freq",
-      main.bar.color = viridis(1, begin = 0.15, option = "D"),
-      sets.bar.color = viridis(1, begin = 0.15, option = "D"),
-      matrix.color = "#555555",
-      shade.alpha = 0.15,
-      shade.color = "#0066ff",
-      nsets = 6,
-      text.scale = c(2, 2, 2, 2, 1.5, 1.5),
-      number.angles = 5
-      )
-
-list_of_down_interactions <- list(lpVShp = lpVShp %>% get.rownames(-1),
-                                lp_phiVShp = lp_phiVShp %>% get.rownames(-1),
-                                hp_phiVShp = hp_phiVShp %>% get.rownames(-1),
-                                lpVShp_phi = lpVShp_phi %>% get.rownames(-1),
-                                lp_phiVShp_phi = lp_phiVShp_phi %>% get.rownames(-1),
-                                lpVSlp_phi = lpVSlp_phi %>% get.rownames(-1)
-                                )
-upset(fromList(list_of_down_interactions),
-      order.by = "freq",
-      main.bar.color = viridis(1, begin = 0.77, option = "A"),
-      sets.bar.color = viridis(1, begin = 0.77, option = "A"),
-      matrix.color = "#555555",
-      shade.alpha = 0.15,
-      shade.color = "#0066ff",
-      nsets = 6,
-      text.scale = c(2, 2,2,2,1.5,1.5),
-      number.angles = 5
-)
-ampDAP_ABI5_targets <- read.csv("genelists/ABI5_targets_ampDAP.txt", header = TRUE, sep = "\t")[[2]]
-DAP_ABI5_targets <- read.csv("genelists/ABI5_targets_DAP.txt", header = TRUE, sep = "\t")[[2]]
-union(ampDAP_ABI5_targets, DAP_ABI5_targets) -> ABI5_targets
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(ABI5_targets)),] %>% t(),
-         color = viridis(24), main = "ABI5_targets")
-targets_ABI5_zscore <- mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(ABI5_targets)),]
-filtered_by_lp <- targets_ABI5_zscore[which(targets_ABI5_zscore[[1]] >= ((sqrt(min(mean_z_score_of_CPM)^2) + max(mean_z_score_of_CPM)) / 4)),]
-pheatmap(filtered_by_lp %>% t(),
-color = viridis(24), main = "ABI5_targets_filtered_by_lp")
-filtered_by_lp_phi <- targets_ABI5_zscore[which(targets_ABI5_zscore[[2]] >= ((sqrt(min(mean_z_score_of_CPM)^2) + max(mean_z_score_of_CPM)) / 4)),]
-pheatmap(filtered_by_lp_phi %>% t(),
-         color = viridis(24), main = "ABI5_targets_filtered_by_lp_phi")
-filtered_by_hp <- targets_ABI5_zscore[which(targets_ABI5_zscore[[3]] >= ((sqrt(min(mean_z_score_of_CPM)^2) + max(mean_z_score_of_CPM)) / 4)),]
-pheatmap(filtered_by_hp %>% t(),
-         color = viridis(24), main = "ABI5_targets_filtered_by_hp")
-filtered_by_hp_phi <- targets_ABI5_zscore[which(targets_ABI5_zscore[[4]] >= ((sqrt(min(mean_z_score_of_CPM)^2) + max(mean_z_score_of_CPM)) / 4)),]
-pheatmap(filtered_by_hp_phi %>% t(),
-         color = viridis(24), main = "ABI5_targets_filtered_by_hp_phi")
-
-ggvenn(list(filtered_by_lp = rownames(filtered_by_lp),
-            filtered_by_lp_phi = rownames(filtered_by_lp_phi),
-            filtered_by_hp = rownames(filtered_by_hp),
-            filtered_by_hp_phi = rownames(filtered_by_hp_phi)
-),
-fill_alpha = 0.5,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(4, end = 0.85, begin = 0.075, option = "B"),
-text_color = "#000000CC"
-)
-
-NBS_LRR <- read.csv("genelists/NBS-LRR related genes.csv", header = TRUE)
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(NBS_LRR[[2]])),] %>% t(),
-         color = viridis(24), main = "NBS-LRR related genes_low_pi")
-plot_z_raincloud_of_genes(NBS_LRR[[2]], mean_z_score_of_CPM)
+# Supplementary Figure 4
+non_STOP1_or_PHR1_targets_low_pi <- decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(1) %>% setdiff(union(local_PSR_up_low_pi_up,
+                                                                                 union(systemic_PSR_up_low_pi_up,
+                                                                                 union(PHR1_and_PHL1_targets_low_pi_up, STOP1_targets_in_low_Pi_up)
+                                                                                )
+                                                                                )
+                                                                           )
+non_STOP1_or_PHR1_targets_low_pi %>% get_enriched_go_table() -> unknow_targets_GOs
+bubbleplot(unknow_targets_GOs)
+write.csv(non_STOP1_or_PHR1_targets_low_pi, "genelists/other_upregulated_genes.csv")
+unknow_PSR_up_high_pi_phi_up <- decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat) %>% get.rownames(1) %>% intersect(non_STOP1_or_PHR1_targets_low_pi)
+unknow_PSR_up_high_pi_phi_down <- decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat) %>% get.rownames(-1) %>% intersect(non_STOP1_or_PHR1_targets_low_pi)
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/non_targets.png",
+    width = 600, height = 600, units = 'px')
+rain_and_heat(data = mean_z_score_of_CPM, list_of_genes = non_STOP1_or_PHR1_targets_low_pi, main = "non_STOP1_or_PHR1_targets_low_pi")
+dev.off()
 
 
-#### TOPGO
-mart <- biomaRt::useMart(biomart = "plants_mart",
-                         dataset = "athaliana_eg_gene",
-                         host = 'https://plants.ensembl.org')
-# Get ensembl gene ids and GO terms
-GTOGO <- biomaRt::getBM(attributes = c( "ensembl_gene_id",
-                                        "go_id", "name_1006", "tair_symbol"), mart = mart)
-#Remove blank entries
-GTOGO <- GTOGO[GTOGO$go_id != '',]
-# convert from table format to list format
-geneID2GO <- by(GTOGO$go_id,
-                GTOGO$ensembl_gene_id,
-                function(x) as.character(x))
-all.genes <- sort(unique(as.character(GTOGO$ensembl_gene_id)))
-
-
-go_pairwise_vector_up <- c()
-go_pairwise_vector_down <- c()
-for (counter in 1:len(pairwise_vector)){
-  table <- get(pairwise_vector[counter]) %>% get.rownames(1) %>%  get_enriched_go_table()
-  assign(paste0("gos_", pairwise_vector[counter], "_up"), table)
-  go_pairwise_vector_up %<>% append(paste0("gos_", pairwise_vector[counter], "_up"))
-  table <- get(pairwise_vector[counter]) %>% get.rownames(-1) %>%  get_enriched_go_table()
-  assign(paste0("gos_", pairwise_vector[counter], "_down"), table)
-  go_pairwise_vector_down %<>% append(paste0("gos_", pairwise_vector[counter], "_down"))
-}
-
-for(counter in 1:len(go_pairwise_vector_up)){
-  GOs_plot <- bubbleplot(get(go_pairwise_vector_up[counter]), color = "A", Terms = 25) + scale_x_discrete(position = "top")
-  svg(paste0(working_directory, "/GOs plots pairwise/", go_pairwise_vector_up[counter], ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-}
-
-for(counter in 1:len(go_pairwise_vector_down)){
-  GOs_plot <- bubbleplot(get(go_pairwise_vector_down[counter]), color = "G", Terms = 25)
-  svg(paste0(working_directory, "/GOs plots pairwise/", go_pairwise_vector_down[counter], ".svg"), width = 7, height = 7)
-  plot(GOs_plot)
-  dev.off()
-}
-
-zscore_up_in_low_Pi <- mean_z_score_of_CPM[lpVShp %>% get.rownames(1),]
-zscore_up_in_low_Pi %<>% mutate(phi_attenuated = lp > lp_phi)
+#figure 6 Heatmaps
+zscore_up_in_low_Pi <- mean_z_score_of_CPM[decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(1),]
+zscore_up_in_low_Pi %<>% mutate(phi_attenuated = LPi > `LPi+Phi`)
 zscore_up_in_low_Pi_phi_attenuated <- zscore_up_in_low_Pi[zscore_up_in_low_Pi$phi_attenuated == TRUE,]
-zscore_up_in_low_Pi_phi_attenuated <- intersect(rownames(zscore_up_in_low_Pi_phi_attenuated), get.rownames(lpVSlp_phi, 1))
+zscore_up_in_low_Pi_phi_attenuated <- intersect(rownames(zscore_up_in_low_Pi_phi_attenuated), get.rownames(decideTests(glmQLFTest(fit_model, contrast = makeContrasts(lp_phi-lp, levels=DGE_matrix$design))), -1))
 zscore_up_in_low_Pi_not_attenuated <- zscore_up_in_low_Pi[zscore_up_in_low_Pi$phi_attenuated == FALSE,]
-zscore_up_in_low_Pi_not_attenuated <- intersect(rownames(zscore_up_in_low_Pi_not_attenuated), get.rownames(lpVSlp_phi, -1))
-pheatmap(mean_z_score_of_CPM[zscore_up_in_low_Pi_phi_attenuated,] %>% t(),
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average",
-         cluster_rows = FALSE,
-         main = "phi attenuated genes")
-pheatmap(mean_z_score_of_CPM[zscore_up_in_low_Pi_not_attenuated,] %>% t(),
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average",
-         cluster_rows = FALSE,
-         main = "not attenuated genes")
+zscore_up_in_low_Pi_not_attenuated <- intersect(rownames(zscore_up_in_low_Pi_not_attenuated), get.rownames(decideTests(glmQLFTest(fit_model, contrast = makeContrasts(lp_phi-lp, levels=DGE_matrix$design))), 1))
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/Phi attenuated genes.png",
+    width = 250, height = 600, units = 'px')
+ComplexHeatmap::pheatmap(mean_z_score_of_CPM[zscore_up_in_low_Pi_phi_attenuated,] %>% t(),
+                         cluster_rows = FALSE,
+                         cluster_cols = TRUE,
+                         color = c(viridis(12, option = "G", end = 0.7, begin = 0.3, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
+                         border_color = NA,
+                         main = "Phi attenuated genes",
+                         show_colnames = T,
+                         cellheight = 30,
+                         #labels_row = IDs$ID,
+                         fontfamily = "Arial",
+                         fontfamily_row = "Arial",
+                         fontfamily_col = "Arial",
+                         fontsize_row = 20,
+                         fontsize_col = 20,
+                         legend = FALSE)
+dev.off()
+      
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/Phi not attenuated genes.png",
+    width = 250, height = 600, units = 'px')
+ComplexHeatmap::pheatmap(mean_z_score_of_CPM[zscore_up_in_low_Pi_not_attenuated,] %>% t(),
+                         cluster_rows = FALSE,
+                         cluster_cols = TRUE,
+                         color = c(viridis(12, option = "G", end = 0.7, begin = 0.3, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
+                         border_color = NA,
+                         main = "Phi not attenuated genes",
+                         show_colnames = T,
+                         cellheight = 30,
+                         #labels_row = IDs$ID,
+                         fontfamily = "Arial",
+                         fontfamily_row = "Arial",
+                         fontfamily_col = "Arial",
+                         fontsize_row = 20,
+                         fontsize_col = 20,
+                         legend = FALSE)
+dev.off()
 
+zscore_down_in_low_Pi <- mean_z_score_of_CPM[decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat) %>% get.rownames(-1),]
+zscore_down_in_low_Pi %<>% mutate(shutdown_in_phi = LPi > `LPi+Phi`)
+zscore_down_in_low_Pi_shutdown_in_phi <- zscore_down_in_low_Pi[zscore_down_in_low_Pi$shutdown_in_phi == TRUE,]
+zscore_down_in_low_Pi_shutdown_in_phi <- intersect(rownames(zscore_down_in_low_Pi_shutdown_in_phi), get.rownames(decideTests(glmQLFTest(fit_model, contrast = makeContrasts(lp_phi-lp, levels=DGE_matrix$design))), -1))
+zscore_down_in_low_Pi_not_shudown <- zscore_down_in_low_Pi[zscore_down_in_low_Pi$shutdown_in_phi == FALSE,]
+zscore_down_in_low_Pi_not_shudown <- intersect(rownames(zscore_down_in_low_Pi_not_shudown), get.rownames(decideTests(glmQLFTest(fit_model, contrast = makeContrasts(lp_phi-lp, levels=DGE_matrix$design))), 1))
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/not_shutdown_in_phi and low Pi.png",
+    width = 250, height = 600, units = 'px')
+ComplexHeatmap::pheatmap(mean_z_score_of_CPM[zscore_down_in_low_Pi_shutdown_in_phi,] %>% t(),
+                         cluster_rows = FALSE,
+                         cluster_cols = TRUE,
+                         color = c(viridis(12, option = "G", end = 0.7, begin = 0.3, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
+                         border_color = NA,
+                         main = "shutdown_in_phi and low Pi",
+                         show_colnames = T,
+                         cellheight = 30,
+                         #labels_row = IDs$ID,
+                         fontfamily = "Arial",
+                         fontfamily_row = "Arial",
+                         fontfamily_col = "Arial",
+                         fontsize_row = 20,
+                         fontsize_col = 20,
+                         legend = FALSE
+                         )
+dev.off()
+png("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Heatmaps/shudown_more.png",
+    width = 250, height = 600, units = 'px')
+ComplexHeatmap::pheatmap(mean_z_score_of_CPM[zscore_down_in_low_Pi_not_shudown,] %>% t(),
+                         cluster_rows = FALSE,
+                         cluster_cols = TRUE,
+                         color = c(viridis(12, option = "G", end = 0.7, begin = 0.3, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
+                         border_color = NA,
+                         main = "zscore_down_in_low_Pi_not_shudown",
+                         show_colnames = T,
+                         cellheight = 30,
+                         #labels_row = IDs$ID,
+                         fontfamily = "Arial",
+                         fontfamily_row = "Arial",
+                         fontfamily_col = "Arial",
+                         fontsize_row = 20,
+                         fontsize_col = 20,
+                         legend = FALSE
+                         )
+dev.off()
+#figure 6 GOs bubbleplots
 zscore_up_in_low_Pi_phi_attenuated  %>% get_enriched_go_table() -> gos_zscore_up_in_low_Pi_phi_attenuated
-GOs_plot <- bubbleplot(gos_zscore_up_in_low_Pi_phi_attenuated, color = "G", Terms = 25)  + scale_x_discrete(position = "top")
-svg(paste0(working_directory, "/Figures/F3/", "gos_zscore_up_in_low_Pi_phi_attenuated", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
+bubbleplot(gos_zscore_up_in_low_Pi_phi_attenuated, color = "G", Terms = 25)  + scale_x_discrete(position = "top") -> GOplot
+CairoPNG("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/GOs lp vs phi/gos_zscore_up_in_low_Pi_phi_attenuated.png", width = 600, height = 600, units = 'px')
+GOplot
 dev.off()
 
 zscore_up_in_low_Pi_not_attenuated %>% get_enriched_go_table() -> gos_zscore_up_in_low_Pi_not_attenuated
-GOs_plot <- bubbleplot(gos_zscore_up_in_low_Pi_not_attenuated, color = "F", Terms = 25)
-svg(paste0(working_directory, "/Figures/F3/", "gos_zscore_up_in_low_Pi_not_attenuated", ".svg"), width = 7, height = 7)
+bubbleplot(gos_zscore_up_in_low_Pi_not_attenuated, color = "F", Terms = 25) -> GOs_plot
+CairoPNG("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/GOs lp vs phi/gos_zscore_up_in_low_Pi_not_attenuated.png", width = 600, height = 600, units = 'px')
 plot(GOs_plot)
 dev.off()
 
-
-zscore_up_in_low_Pi <- mean_z_score_of_CPM[lpVShp %>% get.rownames(-1),]
-zscore_up_in_low_Pi %<>% mutate(not_shutdown_in_phi = lp < lp_phi)
-zscore_up_in_low_Pi_not_shutdown_in_phi <- zscore_up_in_low_Pi[zscore_up_in_low_Pi$not_shutdown_in_phi == TRUE,]
-zscore_up_in_low_Pi_not_shutdown_in_phi <- intersect(rownames(zscore_up_in_low_Pi_not_shutdown_in_phi), get.rownames(lpVSlp_phi, -1))
-zscore_up_in_low_Pi_shudown_more <- zscore_up_in_low_Pi[zscore_up_in_low_Pi$not_shutdown_in_phi == FALSE,]
-zscore_up_in_low_Pi_shudown_more <- intersect(rownames(zscore_up_in_low_Pi_shudown_more), get.rownames(lpVSlp_phi, 1))
-pheatmap(mean_z_score_of_CPM[zscore_up_in_low_Pi_not_shutdown_in_phi,] %>% t(),
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average",
-         cluster_rows = FALSE,
-         main = "not_shutdown_in_phi and low Pi")
-pheatmap(mean_z_score_of_CPM[zscore_up_in_low_Pi_shudown_more,] %>% t(),
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average",
-         cluster_rows = FALSE,
-         main = "shudown_more")
-
-zscore_up_in_low_Pi_not_shutdown_in_phi  %>% get_enriched_go_table() -> gos_zscore_up_in_low_Pi_not_shutdown_in_phi
-GOs_plot <- bubbleplot(gos_zscore_up_in_low_Pi_not_shutdown_in_phi, color = "G", Terms = 25)  + scale_x_discrete(position = "top")
-svg(paste0(working_directory, "/Figures/F3/", "gos_zscore_up_in_low_Pi_not_shutdown_in_phi", ".svg"), width = 7, height = 7)
+zscore_down_in_low_Pi_shutdown_in_phi  %>% get_enriched_go_table() -> gos_zscore_down_in_low_Pi_shutdown_in_phi
+GOs_plot <- bubbleplot(gos_zscore_down_in_low_Pi_shutdown_in_phi, color = "G", Terms = 25)  
+CairoPNG("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/GOs lp vs phi/gos_zscore_up_in_low_Pi_not_shutdown_in_phi.png", width = 600, height = 600, units = 'px')
 plot(GOs_plot)
 dev.off()
 
-zscore_up_in_low_Pi_shudown_more %>% get_enriched_go_table() -> gos_zscore_up_in_low_Pi_shudown_more
-GOs_plot <- bubbleplot(gos_zscore_up_in_low_Pi_shudown_more, color = "F", Terms = 25)
-svg(paste0(working_directory, "/Figures/F3/", "gos_zscore_up_in_low_Pi_shutdown_more", ".svg"), width = 7, height = 7)
+zscore_down_in_low_Pi_not_shudown %>% get_enriched_go_table() -> gos_zscore_down_in_low_Pi_not_shudown
+GOs_plot <- bubbleplot(gos_zscore_down_in_low_Pi_not_shudown, color = "F", Terms = 25) + scale_x_discrete(position = "top")
+CairoPNG("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/GOs lp vs phi/gos_zscore_up_in_low_Pi_shudown_more.png", width = 600, height = 600, units = 'px')
 plot(GOs_plot)
 dev.off()
+#supplemantary figure 5
+CairoPNG(filename = "C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Figures/Sx_venn_up_cairo.png",
+         device ="cairo_png", width = 420, height = 420, units = "px")
+ggvenn(list(`LPi VS HPi` = get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1),
+            `LPi+Phi VS HPi` = get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1),
+            `HPi+Phi VS HPi` = get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1)
+),
+fill_alpha = 0.5,
+stroke_color = "#00000033",
+stroke_size = 1,
+fill_color = viridis(3, end = 0.95, begin = 0.075),
+text_color = "#000000CC",
+text_size = 6
+)
+dev.off()
 
-lpVSlp_phi %>% get.rownames( -1) %>% intersect(get.rownames(hpVShp_phi, -1)) %>% get_enriched_go_table() %>% bubbleplot(color = "C")
-get.rownames(hp_phiVShp,1) %>% dplyr::setdiff(get.rownames(lp_phiVSlp,1)) %>% get_enriched_go_table() -> data1 # bubbleplot()
-#get_rownames(lp_phiVSlp,1) %>% dplyr::setdiff(get_rownames(hp_phiVShp,1)) %>% get_enriched_go_table() -> data2
- # data2$elimFisher[1] <- 1e-30
-  #data2$elimFisher <- as.numeric(data2$elimFisher)
-  #bubbleplot(data2)
-get.rownames(hp_phiVShp,1) %>% get_enriched_go_table()
-get.rownames(lp_phiVSlp,1) %>% get_enriched_go_table()
-lpVSlp_phi %>% get.rownames( -1) %>% intersect(get.rownames(hpVShp_phi, -1)) %>% len()
-get_enriched_go_table(get.rownames(hp_phiVShp,1))
 
-phi_activate_defense_genes <- list(lpVSlp_phi = lpVSlp_phi %>% get.rownames(-1),
-                     hpVShp_phi = get.rownames(hpVShp_phi, -1))
 
-ggvenn(phi_activate_defense_genes, fill_color = viridis(4, end = 0.95, begin = 0.075, option = "E"), 
+
+PHR1vennPHL1 <- list(PHL1_targets_low_pi_up = c(PHL1_targets_low_pi_up),
+                    PHR1_targets_low_pi_up = c(PHR1_targets_low_pi_up)
+                    )
+
+ggvenn(PHR1vennPHL1, fill_color = viridis(2, end = 0.95, begin = 0.075), 
        fill_alpha = 0.6,
-       stroke_color = darken(viridis(1), 0.4),
+       stroke_color = colorspace::darken(viridis(1), 0.4),
        text_color = "#000000CC",
-       text_size = 8,
+       text_size = 12,
        stroke_size = 1,
-       show_percentage = F
 )
 
 
-lp_phiVSlp %>% get.rownames(-1) %>% get_enriched_go_table()
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% (lp_phiVSlp %>% get.rownames(1))),] %>% t(),
-         cluster_rows = FALSE,
-         c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "Down in lp_phiVSlp",
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average")
+{
+#lpVShp_unique_up
+GOs_plot <-
+  bubbleplot(
+    get_enriched_go_table(
+      dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1),
+                     union(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1),
+                           get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1)
+                           )
+      )
+      ),
+    color = "A", Terms = 25
 
-
-ggvenn(list(lp_phiVShp = lp_phiVShp %>% get.rownames(1),
-            hp_phiVShp = hp_phiVShp %>% get.rownames(1)
-),
-fill_alpha = 0.55,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(2, end = 0.8, begin = 0.4, option = "A"),
-text_color = "#000000CC",
-text_size = 6
-)
-ggvenn(list(lp_phiVShp = lp_phiVShp %>% get.rownames(-1),
-            hp_phiVShp = hp_phiVShp %>% get.rownames(-1)
-),
-fill_alpha = 0.55,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(2, end = 0.8, begin = 0.4, option = "G"),
-text_color = "#000000CC",
-text_size = 6
-)
-
-lp_phiVShp %>% get.rownames(1) %>% setdiff(get.rownames(hp_phiVShp, 1))  %>% get_enriched_go_table() %>% bubbleplot(color = "A", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "gos_lp_phiVShp_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
+  )
+CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lpVShp_unique_up.png"),
+           width = 600, height = 600, units = 'px')
+p <- GOs_plot
+p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+print(p)
 dev.off()
-
-hp_phiVShp %>% get.rownames(1) %>% setdiff(get.rownames(lp_phiVShp, 1))  %>% get_enriched_go_table() %>% bubbleplot(color = "A", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "gos_hp_phiVShp_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
+#lpVShp_unique_down
+GOs_plot <-
+  bubbleplot(
+    get_enriched_go_table(
+      dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), -1),
+                     union(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), -1),
+                           get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), -1)
+                     )
+      )
+      ),
+      color = "G", Terms = 25
+  )
+CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lpVShp_unique_down.png"),
+         width = 600, height = 600, units = 'px')
+p <- GOs_plot
+p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+print(p)
 dev.off()
-
-hp_phiVShp %>% get.rownames(1) %>% intersect(get.rownames(lp_phiVShp, 1))  %>% get_enriched_go_table() %>% bubbleplot(color = "A", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "gos_hp_phi&lp_phi_intersect_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-
-lp_phiVShp %>% get.rownames(-1) %>% setdiff(get.rownames(hp_phiVShp, -1))  %>% get_enriched_go_table() %>% bubbleplot(color = "G", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "gos_lp_phiVShp_down", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-
-hp_phiVShp %>% get.rownames(-1) %>% setdiff(get.rownames(lp_phiVShp, -1))  %>% get_enriched_go_table() %>% bubbleplot(color = "G", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "gos_hp_phiVShp_down", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-
-hp_phiVShp %>% get.rownames(-1) %>% intersect(get.rownames(lp_phiVShp, -1))  %>% get_enriched_go_table() %>% bubbleplot(color = "G", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "gos_hp_phi&lp_phi_intersect_down", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-
-hp_phiVShp %>% get.rownames(1) %>% get_enriched_go_table() %>% bubbleplot(color = "A", Terms = 25) + scale_x_discrete(position = "top") -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "hp_phiVShp_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-hp_phiVShp %>% get.rownames(-1) %>% get_enriched_go_table() %>% bubbleplot(color = "G", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "hp_phiVShp_down", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-lp_phiVShp %>% get.rownames(1) %>% get_enriched_go_table() %>% bubbleplot(color = "A", Terms = 25) + scale_x_discrete(position = "top") -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "lp_phiVShp_up", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-lp_phiVShp %>% get.rownames(-1) %>% get_enriched_go_table() %>% bubbleplot(color = "G", Terms = 25) -> GOs_plot
-svg(paste0(working_directory, "/Figures/F4/", "lp_phiVShp_down", ".svg"), width = 7, height = 7)
-plot(GOs_plot)
-dev.off()
-
-lpVShp %>% get.rownames(1) %>% write.csv((paste0(getwd(),"/Supp Data/lpVShp_up.csv")))
-lpVShp %>% get.rownames(-1) %>% write.csv((paste0(getwd(),"/Supp Data/lpVShp_down.csv")))
-lp_phiVShp %>% get.rownames(1) %>% write.csv((paste0(getwd(),"/Supp Data/lp_phiVShp_up.csv")))
-lp_phiVShp %>% get.rownames(-1) %>% write.csv((paste0(getwd(),"/Supp Data/lp_phiVShp_down.csv")))
-lp_phiVSlp %>% get.rownames(1) %>% write.csv((paste0(getwd(),"/Supp Data/lp_phiVSlp_up.csv")))
-lp_phiVSlp %>% get.rownames(-1) %>% write.csv((paste0(getwd(),"/Supp Data/lp_phiVSlp_down.csv")))
-hp_phiVShp %>% get.rownames(1) %>% write.csv((paste0(getwd(),"/Supp Data/hp_phiVShp_up.csv")))
-hp_phiVShp %>% get.rownames(-1) %>% write.csv((paste0(getwd(),"/Supp Data/hp_phiVShp_down.csv")))
-zscore_up_in_low_Pi_phi_attenuated %>% write.csv((paste0(getwd(),"/Supp Data/lp_phi_attenuated.csv")))
-zscore_up_in_low_Pi_not_attenuated %>% write.csv((paste0(getwd(),"/Supp Data/lp_phi_enhanced.csv")))
-zscore_up_in_low_Pi_not_shutdown_in_phi %>% write.csv((paste0(getwd(),"/Supp Data/lp_phi_not_shutdown.csv")))
-zscore_up_in_low_Pi_shudown_more %>% write.csv((paste0(getwd(),"/Supp Data/lp_phi_shutdown_more.csv")))
-
-
-lp_phiVShp %>% get.rownames(1) %>% setdiff(get.rownames(hp_phiVShp, 1))  %>% write.csv((paste0(getwd(),"/Supp Data/lp_phiVShp_unique_up.csv")))
-hp_phiVShp %>% get.rownames(1) %>% setdiff(get.rownames(lp_phiVShp, 1))  %>% write.csv((paste0(getwd(),"/Supp Data/hp_phiVShp_unique_up.csv")))
-hp_phiVShp %>% get.rownames(1) %>% intersect(get.rownames(lp_phiVShp, 1))  %>% write.csv((paste0(getwd(),"/Supp Data/hp_phiVShp_intersect_up.csv")))
-lp_phiVShp %>% get.rownames(-1) %>% setdiff(get.rownames(hp_phiVShp, -1))  %>% write.csv((paste0(getwd(),"/Supp Data/lp_phiVShp_unique_down.csv")))
-hp_phiVShp %>% get.rownames(-1) %>% setdiff(get.rownames(lp_phiVShp, -1))  %>% write.csv((paste0(getwd(),"/Supp Data/hp_phiVShp_unique_down.csv")))
-hp_phiVShp %>% get.rownames(-1) %>% intersect(get.rownames(lp_phiVShp, -1))  %>% write.csv((paste0(getwd(),"/Supp Data/hp_phiVShp_intersect_down.csv")))
-
-
-
-
-GO.heatmap(GO = "GO:0009751") #response to salicylic acid
-GO.heatmap(GO = "GO:0006099") #tricarboxilic acid cycle
-GO.heatmap(GO = "GO:0009737") #response to abscisic acid
-GO.heatmap(GO = "GO:0009753") #response to jasmonic acid
-GO.heatmap(GO = "GO:0009723") #response to ethylene
-
-#### good to this point
-
-
-
-GO.heatmap(mean_z_score_of_CPM, "GO:0009737") #response to abscisic acid
-venn_of_treatments(mean_z_score_of_CPM, get_genes_of_a_go("GO:0009737")[[1]], cutoff = 0.5)
-GO.heatmap(mean_z_score_of_CPM,"GO:0009753") #response to JA
-venn_of_treatments(mean_z_score_of_CPM, get_genes_of_a_go("GO:0009753")[[1]], cutoff = 0.75)
-GO.heatmap(mean_z_score_of_CPM, "GO:0009751") #response to SA
-venn_of_treatments(mean_z_score_of_CPM, get_genes_of_a_go("GO:0009751")[[1]], cutoff = 0.8)
-GO.heatmap(mean_z_score_of_CPM,"GO:0009723") #response to ethylene
-venn_of_treatments(mean_z_score_of_CPM, get_genes_of_a_go("GO:0009723")[[1]], cutoff = 0.8)
-GO.heatmap(mean_z_score_of_CPM,"GO:0006468")
-
-venn_of_treatments(mean_z_score_of_CPM, rownames(mean_z_score_of_CPM), cutoff = 0.75, upordown = "up")
-
-ggvenn(
-list(lpVShp = get.rownames(hp_phiVShp, 1),
-upper_quart = rownames(mean_z_score_of_CPM[which(mean_z_score_of_CPM[[4]] >=
-                         (max(mean_z_score_of_CPM)+sqrt(min(mean_z_score_of_CPM)^2)*(2*0.75))-(max(mean_z_score_of_CPM)+sqrt(min(mean_z_score_of_CPM)^2))),])),
-fill_alpha = 0.5,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(dim(mean_z_score_of_CPM)[[2]], end = 0.95, begin = 0.07, option = "B"),
-text_color = "#000000CC",
-auto_scale = TRUE
-)
-
-for(counter in 1:dim(mean_z_score_of_CPM)[[2]]){
-  assign(paste0("treatment_", colnames(mean_z_score_of_CPM)[counter]), 
-         mean_z_score_of_CPM[which(mean_z_score_of_CPM[[counter]] >= 0.8252104),])
-  print(paste0("treatment_", colnames(mean_z_score_of_CPM)[counter]))
-}
-
-mean_z_score_of_CPM["AT1G80840",] #WRKY40 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3023790/
-mean_z_score_of_CPM["AT4G31800",] #WRKY18 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3023790/
-mean_z_score_of_CPM["AT2G25000",] #WRKY60 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3023790/
-mean_z_score_of_CPM["AT3G02480",] #ABA Responsive protein https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5159420/
-mean_z_score_of_CPM["AT2G36270",] #ABI5 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5159420/
-mean_z_score_of_CPM["AT1G69810",] #DOG1
-
-z_score_of_CPM <- cpm(DGE_matrix, prior.count = 2, log = TRUE)
-z_score_of_CPM %<>% t() %>% scale() %>% t() %>% as.data.frame() %>% cluster_matrix(dim = "row", method = "complete")
-mean_z_score_of_CPM <- c()
-mean_z_score_of_CPM$hp <- rowMeans(z_score_of_CPM[1:3])
-mean_z_score_of_CPM$lp <- rowMeans(z_score_of_CPM[4:6])
-mean_z_score_of_CPM$lp_phi <- rowMeans(z_score_of_CPM[7:9])
-mean_z_score_of_CPM$hp_phi <- rowMeans(z_score_of_CPM[10:12])
-mean_z_score_of_CPM <- as.data.frame(mean_z_score_of_CPM)
-mean_z_score_of_CPM <- mean_z_score_of_CPM[,c("lp", "lp_phi", "hp", "hp_phi")]
-
-read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/lp_network/TFs_cts_lpVShp_up.tab",
-           sep = ",") -> lpVShp_up.tf
-histogram.of.tf.interactions(tf.data = lpVShp_up.tf, option = "A", begin = 0.8,end =  0.8) + ggtitle("lpVShp_up") ->
-  lpVShp_up.tf.plot
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(lpVShp_up.tf.plot$data$TF)),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "lpVShp_up.tf",
-         show_colnames = T,
-         labels_col=c(lpVShp_up.tf.plot$data$ID),
-         fontsize_row = 18,
-         clustering_method = "average")
-read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/lp_network/TFs_cts_lp_phiVShp_up.tab",
-         sep = ",") -> lp_phiVShp_up.tf
-histogram.of.tf.interactions(tf.data = lp_phiVShp_up.tf, option = "A", begin = 0.4,end =  0.4) + ggtitle("lp_phiVShp_up") ->
-  lp_phiVShp_up.tf.plot
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(lp_phiVShp_up.tf.plot$data$TF)),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "lp_phiVShp_up.tf",
-         show_colnames = T,
-         labels_col=c(lp_phiVShp_up.tf.plot$data$ID),
-         fontsize_row = 18,
-         clustering_method = "average")
-read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/lp_network/TFs_cts_hp_phiVShp_up.tab",
-         sep = ",") -> hp_phiVShp_up.tf
-histogram.of.tf.interactions(tf.data = hp_phiVShp_up.tf, option = "G", begin = 0.7,end =  0.7) + ggtitle("hp_phiVShp_up") ->
-  hp_phiVShp_up.tf.plot
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(hp_phiVShp_up.tf.plot$data$TF)),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "hp_phiVShp_up.tf",
-         show_colnames = T,
-         labels_col=c(hp_phiVShp_up.tf.plot$data$ID),
-         fontsize_row = 18,
-         clustering_method = "average")
-read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/lp_network/TFs_cts_lp_phiVSlp_up.tab",
-         sep = ",") -> lp_phiVSlp_up.tf
-histogram.of.tf.interactions(tf.data = lp_phiVSlp_up.tf, option = "G", begin = 0.4,end =  0.4) + ggtitle("lp_phiVSlp_up") ->
-  lp_phiVSlp_up.tf.plot
-pheatmap(mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(lp_phiVSlp_up.tf.plot$data$TF)),] %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "lp_phiVSlp_up.tf",
-         show_colnames = T,
-         labels_col=c(lp_phiVSlp_up.tf.plot$data$ID),
-         fontsize_row = 18,
-         clustering_method = "average")
-read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/genelists/NPK.csv",
-         sep = ",", header = FALSE) -> NPK
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(NPK$V1)),] %>% t() -> NPK.matrix
-NPK.matrix %>% t() %>% as.data.frame() %>% filter(hp_phi >= hp) %>% t() -> NPK.matrix
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(NPK.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = NPK$V1))
-NPK.matrix[,c(IDs$ensembl_gene_id)] -> NPK.matrix
-pheatmap(NPK.matrix[c(3,4),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "macros route",
-         show_colnames = T,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-
-read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/genelists/micro.csv",
-         sep = ",", header = FALSE) -> micro
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(micro$V1)),] %>% t() -> micro.matrix
-micro.matrix %>% t() %>% as.data.frame() %>% filter(hp_phi >= hp) %>% t() -> micro.matrix
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(micro.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = micro$V1))
-micro.matrix[,c(IDs$ensembl_gene_id)] -> micro.matrix
-pheatmap(micro.matrix[c(3,4),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "micronutrients",
-         show_colnames = T,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-
-read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/genelists/nutrient transporter list.csv",
-         sep = ",", header = TRUE) -> transporters
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c(transporters$ID)),] %>% t() -> transporters.matrix
-transporters.matrix %>% t() %>% as.data.frame() %>% filter(hp_phi >= hp) %>% t() -> transporters.matrix
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(transporters.matrix)),c(1,4)] -> IDs
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-rownames(IDs) <- IDs$ensembl_gene_id
-IDs[transporters$ID,] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol, ".", transporters$Ion, ".", transporters$Alt.ion))
-IDs$ensembl_gene_id %<>% factor(IDs$ensembl_gene_id, levels = tranporters$ID)
-transporters.matrix[,(c(transporters$ID))] -> transporters.matrix
-pheatmap(transporters.matrix[c(3,4),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "transporters",
-         cellwidth = 24,
-         cellheight = 24,
-         show_colnames = T,
-         labels_col = (IDs$ID),
-         fontsize_row = 18,
-         clustering_method = "average")
-plot_z_raincloud_of_genes(transporters$ID)
-
-
-
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G67030") #ABA1 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G67080") #ABA4 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G14440") #NCED3 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G52340") #ABA2 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G43600") #AAO2 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G27150") #AAO3 na
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c("AT5G67030", "AT1G67080", "AT3G14440", "AT1G52340", "AT3G43600", "AT2G27150")),] %>% t() -> ABA.route.matrix
-ABA.route.matrix <- ABA.route.matrix[,c("AT5G67030", "AT1G67080", "AT3G14440", "AT1G52340", "AT3G43600", "AT2G27150")]
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(ABA.route.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(ABA.route.matrix)))
-pheatmap(ABA.route.matrix[c(3,4),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "ABA route",
-         show_colnames = T,
-         cellwidth = 24,
-         cellheight = 24,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-GO.heatmap(GO = "GO:0009789", mean_z_score_of_CPM[,c(3,4)])
-plot_z_raincloud_of_genes(get_genes_of_a_go("GO:0009789")[[1]], mean_z_score_of_CPM[,c(3,4)])
-GO.heatmap(GO = "GO:0009788", mean_z_score_of_CPM[,c(3,4)])
-plot_z_raincloud_of_genes(get_genes_of_a_go("GO:0009788")[[1]], mean_z_score_of_CPM[,c(3,4)])
-
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G67560") #LOX6 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G72520") #LOX4 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G17420") #LOX3 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G45140") #LOX2 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G42650") #CYP74A1 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G25770") # na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G06050") #OPR3 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G20510") #OPCL1 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G16760") #ACX1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G35690") #ACX5 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G29010") #AIM1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G33150") #na
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c("AT1G72520", "AT3G45140", "AT5G42650", "AT3G25770", "AT2G06050", "AT1G20510", "AT4G16760", "AT4G29010", "AT2G33150")),] %>% t() -> JA.route.matrix
-JA.route.matrix <- JA.route.matrix[,c("AT1G72520", "AT3G45140", "AT5G42650", "AT3G25770", "AT2G06050", "AT1G20510", "AT4G16760", "AT4G29010", "AT2G33150")]
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(JA.route.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(JA.route.matrix)))
-pheatmap(JA.route.matrix[c(3,4),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "JA route",
-         show_colnames = T,
-         cellwidth = 24,
-         cellheight = 24,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-
-GO.heatmap(GO = "GO:0009867")
-
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G33510") #DHS2 low
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G39980") #DHS2 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G22410") #na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G66120") # *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G06350") # *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G21940") #SK1 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G39540") #SK2 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G45300") #EPSP *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G48860") # *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G48850") # *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G74710") #EDS ICS1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G18870") #ICS2 *
-
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c("AT4G33510", "AT4G39980", "AT1G22410", "AT5G66120", "AT3G06350", "AT2G21940", "AT4G39540", "AT2G45300",
-                                                               "AT1G48860", "AT1G48850", "AT1G74710", "AT1G18870")),] %>% t() -> SA.route.matrix
-SA.route.matrix <- SA.route.matrix[,c("AT4G33510", "AT4G39980", "AT1G22410", "AT5G66120", "AT3G06350", "AT2G21940", "AT4G39540", "AT2G45300",
-                                      "AT1G48860", "AT1G48850", "AT1G74710", "AT1G18870")]
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(SA.route.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(SA.route.matrix)))
-pheatmap(SA.route.matrix[c(3,4),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "SA route",
-         show_colnames = T,
-         cellwidth = 24,
-         cellheight = 24,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-GO.heatmap(GO = "GO:0009627", mean_z_score_of_CPM[,c(3,4)])
-GO.heatmap(GO = "GO:0009751", mean_z_score_of_CPM[,c(3,4)])
-GO.heatmap(GO = "GO:0080151", mean_z_score_of_CPM[,c(3,4)])
-GO.heatmap(GO = "GO:0009863", mean_z_score_of_CPM[,c(3,4)])
-
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G67940") #STAR1 low
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G37330") #ALS3  na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G04920") #MED16 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G34370") #STOP1 low
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G73710") #RAE6 up
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G01720") #RAE1 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G27920") #RAH1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G08430") #ALMT1 low
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G23630") #PDR2 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G23010") #LPR1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G71040") #LPR2 up
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G63245") #CLE14 low
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G43790") #MPK6 low
-
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c("AT1G67940", "AT2G37330", "AT4G04920", "AT1G34370", "AT5G01720", "AT5G27920", "AT1G08430", "AT5G23630", "AT1G23010",
-                                                               "AT1G71040", "AT1G63245", "AT2G43790")),] %>% t() -> local.PSR.matrix
-local.PSR.matrix <- local.PSR.matrix[,c("AT1G67940", "AT2G37330", "AT4G04920", "AT1G34370", "AT5G01720", "AT5G27920", "AT1G08430", "AT5G23630", "AT1G23010",
-                                        "AT1G71040", "AT1G63245", "AT2G43790")]
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(local.PSR.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(local.PSR.matrix)))
-pheatmap(local.PSR.matrix[c(1,2),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "local PSR route",
-         show_colnames = T,
-         cellwidth = 24,
-         cellheight = 24,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G60410") #SIZ1 up
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G02860") #NLA
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G16760") #ITPK1 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G42810") #IPK1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G15070") #VIH1 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G01310") #VIH2 up
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G28610") #PHR1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G29000") #PHL1 na
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G24120") #PHL2 up
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G20150") #SPX1 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G26660") #SPX2 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G45130") #SPX3 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G15330") #SPX4 up
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G33770") #PHO2 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G23430") #PHO1 ns
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G38940") #PHT4 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G43360") #PHT3 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G43370") #PHT2 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G43350") #PHT1 down
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G02860") #NLA up degradess PHTs
-
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c("AT5G60410", "AT5G16760", "AT5G42810", "AT5G15070", "AT3G01310", "AT4G28610", "AT5G29000", "AT3G24120", "AT5G20150",
-                                                               "AT2G26660", "AT2G45130", "AT5G15330", "AT2G33770", "AT5G43350", "AT1G02860")),] %>% t() -> local.PSR.matrix
-local.PSR.matrix <- local.PSR.matrix[,c("AT5G60410", "AT5G16760", "AT5G42810", "AT5G15070", "AT3G01310", "AT4G28610", "AT5G29000", "AT3G24120", "AT5G20150",
-                                        "AT2G26660", "AT2G45130", "AT5G15330", "AT2G33770", "AT5G43350", "AT1G02860")]
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(local.PSR.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(local.PSR.matrix)))
-pheatmap(local.PSR.matrix[c(1,2),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "local PSR route",
-         show_colnames = T,
-         cellwidth = 24,
-         cellheight = 24,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-
-
-
-
-
-
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G08430") #ALMT1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G51340") #MATE
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G17470") #ALMT6
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G18440") #ALMT9
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G21890") #Umamit19
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G70260") #umamit36
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G75500") #AT1G75500
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G28070") #
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G28080") #
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G28100")
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G28130")
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G26910") #AT3G30340
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G15236") #AT2G29940
-
-mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% c("AT1G08430", "AT1G51340", "AT2G17470", "AT3G18440", "AT1G21890", "AT1G70260", "AT1G75500", "AT3G28070",
-                                                               "AT3G28080", "AT3G28100", "AT3G28130", "AT2G26910", "AT4G15236")),] %>% t() -> local.PSR.matrix
-local.PSR.matrix <- local.PSR.matrix[,c("AT1G08430", "AT1G51340", "AT2G17470", "AT3G18440", "AT1G21890", "AT1G70260", "AT1G75500", "AT3G28070",
-                                        "AT3G28080", "AT3G28100", "AT3G28130", "AT2G26910", "AT4G15236")]
-GTOGO[which(GTOGO$ensembl_gene_id %in% colnames(local.PSR.matrix)),c(1,4)] -> IDs
-IDs %<>% dplyr::mutate(ID = paste0(ensembl_gene_id, ".", tair_symbol))
-IDs[which(!(duplicated(IDs$ensembl_gene_id))),] -> IDs
-IDs %<>% arrange(factor(ensembl_gene_id, levels = colnames(local.PSR.matrix)))
-pheatmap(local.PSR.matrix[c(3,4),],
-         cluster_rows = FALSE,
-         cluster_cols = FALSE,
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         main = "transporters",
-         show_colnames = T,
-         cellwidth = 24,
-         cellheight = 24,
-         labels_col = IDs$ID,
-         fontsize_row = 18,
-         clustering_method = "average")
-
-
-
-
-
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G24650") #AT3G24650 ABI3
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G36270") #ABI5
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G72770") #HAB1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G60410") #SIZ1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G12110") #nrt1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G16720") #MYB7
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G13300") #NIGT1/HRS1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G52430") #PAD4
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G48090") #EDS1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G08720") #EDR1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G51200") #EDS4 *
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G15880") #ESD4 * 
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G64280") #NPR1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G45110") #NPR3
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G80490") #TPR1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G79280") #NUA
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G20600") #NDR1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G14610") #PR1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G57260") #PR2
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G02480") #ABA Responsive protein
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G62470") #MYB96
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G45830") #DOG1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G34370") #STOP1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G08430") #ALMT1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G22300") #CAMTA3
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G64220") #CAMTA2
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G37770") #CML24
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G13930") #tt4
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G06950") #TGA2
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G33770") #PHO2
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G32640") #MYC2
-boxplot_of_gene(DGE_matrix$counts, gene = "AT2G14610") #Pathogenesis related 1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT3G57260") #AT3G57260
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G14790") #AT1G14790 RDR1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT4G33950") #AT4G33950 OST1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G56650") #AT1G56650 PAP1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G25540") #AT1G25540
-boxplot_of_gene(DGE_matrix$counts, gene = "AT1G69310") #AT1G69310 WRKY57
-boxplot_of_gene(DGE_matrix$counts, "AT5G46760") #MYC3
-boxplot_of_gene(DGE_matrix$counts, "AT4G17880") #MYC4
-boxplot_of_gene(DGE_matrix$counts, "AT3G45140") #LOX2
-boxplot_of_gene(DGE_matrix$counts, "AT3G57270") #AT3G57270 BG1
-boxplot_of_gene(DGE_matrix$counts, "AT1G64280") #NPR1
-boxplot_of_gene(DGE_matrix$counts, gene = "AT5G45110") #NPR3
-boxplot_of_gene(DGE_matrix$counts, "AT5G10140") #AT5G10140 FLC SPX4 positive regulated
-boxplot_of_gene(DGE_matrix$counts, "AT1G76420") #AT1G76420 CUC3 SPX4 positive regulated
-boxplot_of_gene(DGE_matrix$counts, "AT1G59680") #AT1G59680 
-boxplot_of_gene(DGE_matrix$counts, "AT3G15500") #AT3G15500
-boxplot_of_gene(DGE_matrix$counts, "AT3G01600") #AT3G01600
-boxplot_of_gene(DGE_matrix$counts, "AT1G22150") #SULTR1;3
-boxplot_of_gene(DGE_matrix$counts, "AT5G10180") #SULTR2:1
-boxplot_of_gene(DGE_matrix$counts, "AT1G26830") #CUL3
-boxplot_of_gene(DGE_matrix$counts, "AT5G46210") #CUL4
-boxplot_of_gene(DGE_matrix$counts, "AT5G05410") #DREB2A
-boxplot_of_gene(DGE_matrix$counts, "AT5G52310") #RD29A
-boxplot_of_gene(DGE_matrix$counts, "AT1G01060") #LHY
-boxplot_of_gene(DGE_matrix$counts, "AT1G08320") #TGA9
-boxplot_of_gene(DGE_matrix$counts, "AT5G06839") #TGA10
-boxplot_of_gene(DGE_matrix$counts, "AT4G36740") #HB-5
-boxplot_of_gene(DGE_matrix$counts, "AT5G65310") #HB5 diferent gene
-boxplot_of_gene(DGE_matrix$counts, "AT2G21900") #Wrky59
-boxplot_of_gene(DGE_matrix$counts, "AT3G03260") #HDG8
-boxplot_of_gene(DGE_matrix$counts, "AT5G14750") #WER
-boxplot_of_gene(DGE_matrix$counts, "AT2G46410") #CAPRICE
-boxplot_of_gene(DGE_matrix$counts, "AT2G33770") #PHO1
-boxplot_of_gene(DGE_matrix$counts, "AT2G20570") #GLK
-boxplot_of_gene(DGE_matrix$counts, "AT5G44190") #GLK
-
-
-plot(melt(mean_z_score_of_CPM["AT1G80840",])) #WRKY40
-plot(melt(mean_z_score_of_CPM["AT4G31800",])) #WRKY18
-plot(melt(mean_z_score_of_CPM["AT2G25000",])) #WRKY60
-
-
-plot(melt(mean_z_score_of_CPM["AT5G51760",])) #AHG1
-plot(melt(mean_z_score_of_CPM["AT3G11410",])) #AHG3
-plot(melt(mean_z_score_of_CPM["AT5G24470",])) #PRR5
-plot(melt(mean_z_score_of_CPM["AT5G02810",])) #PRR7
-plot(melt(mean_z_score_of_CPM["AT2G46790",])) #PRR9
-plot(melt(mean_z_score_of_CPM["AT2G46830",])) #CCA1
-plot(melt(mean_z_score_of_CPM["AT5G20150",])) #SPX1 AT5G20150
-
-
-SnRK2s <- read.table("list of SnRK2s.txt", sep = "\t", fill=TRUE, header = TRUE)[[2]]
-pheatmap(mean_z_score_of_CPM[SnRK2s,],
-         cluster_rows = FALSE,
-         color = viridis(24),
-         main = "SnRK2s")
-GO_heatmap(mean_z_score_of_CPM, "GO:0007623")
-
-  genes_of_go <- get_genes_of_a_go("GO:0007623")
-  genes_of_go <- genes_of_go[order(genes_of_go$ensembl_gene_id), ]
-  mean_z_score_of_CPM <- mean_z_score_of_CPM[order(rownames(mean_z_score_of_CPM)), ]
-  genes_of_go_z_score <- mean_z_score_of_CPM[which(rownames(mean_z_score_of_CPM) %in% genes_of_go$ensembl_gene_id), ]
-  genes_of_go %<>% mutate(ID = paste0(ensembl_gene_id, "_" ,tair_symbol))
-  pheatmap(genes_of_go_z_score %>% t(),
-           cluster_rows = FALSE,
-           color = viridis(24),
-           main = genes_of_go$GO_name[1],
-           labels_col = genes_of_go$ID,
-           labels_row = rev(colnames(genes_of_go_z_score))
-           )
-GO_heatmap(mean_z_score_of_CPM, "GO:0009862")
-
-GO_heatmap(mean_z_score_of_CPM, "GO:0006817") #phosphate ion transport
-plot(melt(mean_z_score_of_CPM["AT4G28610",])) #PHR1
-GO_heatmap(mean_z_score_of_CPM, "GO:0009862")
-GO_PCA("GO:0006817")
-GO.heatmap(GO = "GO:0009863") #SA mediated signaling pathway
-GO.heatmap(mean_z_score_of_CPM, "GO:0009867") # jasmonic acid mediated signaling pathway
-
-GO_PCA("GO:0009863")
-
-
-GO_PCA("GO:0009753")
-GO_heatmap("GO:0009695")
-GO_PCA("GO:0009695")
-
-GO_heatmap("GO:0009695") #JA biosynthesis
-
-GO_PCA("GO:0009737")
-GO_heatmap("GO:0009862")
-GO_PCA("GO:0009862")
-GO_heatmap("GO:0071577") #zinc transport
-GO_PCA("GO:0071577")
-GO_heatmap("GO:0015979") #photosyntesis
-GO_PCA("GO:0015979")
-GO_heatmap("GO:0006754") #ATP Biosyntesis
-GO_PCA("GO:0006754")
-
-GO_PCA("GO:0009723")
-GO_heatmap(mean_z_score_of_CPM, "GO:0009693") #ethylene biosynthesis
-GO_PCA("GO:0009693")
-GO_heatmap(mean_z_score_of_CPM, "GO:0009873") #ethylene activated pathway
-GO_heatmap("GO:0009738")
-GO_heatmap(mean_z_score_of_CPM, "GO:0071456") # cellular response to hypoxia
-GO_heatmap("GO:0016036") #cellular response to phosphate starvation
-GO_PCA("GO:0016036")
-GO_heatmap("GO:0002221") #patern recognition
-GO_heatmap("GO:0009688") # ABA biosynthesis
-GO.heatmap(GO = "GO:0090359") #negative regulation of ABA biosynthesis
-GO.heatmap(GO = "GO:0010116") #positive regulation of ABA biosynthesis
-
-GO_heatmap(mean_z_score_of_CPM,"GO:0016036") #cellular response to phosphate starvation
-read.table("hpVSlp up regulated upstream regulators.txt", sep = "\t", header = TRUE)[[2]] %>%
-get_go_table() -> GOs_upstream_hpVSlp
-
-read.table("hp_phiVShp up regulated upstream regulators.txt", sep = "\t", header = TRUE)[[2]] %>%
-  get_go_table() -> GOs_upstream_hp_phiVShp
-
-read.table("hpVSlp up regulated upstream regulators.txt", sep = "\t", header = TRUE)[[2]]
-GOs_of_hp_upregulators <- GTOGO[which(GTOGO[[1]] %in% read.table("hpVSlp up regulated upstream regulators.txt", sep = "\t", header = TRUE)[[2]]),]
-
-
-
-
-
-ggvenn(list(up_in_low_Pi_not_atenuated =  rownames(zscore_up_in_low_Pi_not_atenuated),
-            up_in_low_Pi_phi_atenuated = rownames(zscore_up_in_low_Pi_phi_atenuated)
-),
-fill_alpha = 0.5,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(2, end = 0.85, begin = 0.075, option = "B"),
-text_color = "#000000CC"
-)
-
-zscore_down_in_low_Pi <- mean_z_score_of_CPM[lpVShp %>% get_rownames(-1),]
-zscore_down_in_low_Pi %<>% mutate(phi_enhanced = lp <= lp_phi)
-zscore_down_in_low_Pi_phi_enhanced <- zscore_down_in_low_Pi[zscore_down_in_low_Pi$phi_enhanced == TRUE,]
-zscore_down_in_low_Pi_not_enhanced <- zscore_down_in_low_Pi[zscore_down_in_low_Pi$phi_enhanced == FALSE,]
-pheatmap(zscore_down_in_low_Pi_phi_enhanced[,1:4] %>% t(),
-         color = c(viridis(12, option = "G", end = 0.8, begin = 0.2, direction = -1), viridis(12, option = "A", end = 0.8, begin = 0.2)),
-         border_color = NA,
-         show_colnames = F,
-         fontsize_row = 18,
-         clustering_method = "average",
-         cluster_rows = FALSE,
-         main = "pi zscore_down_in_low_Pi_phi_enhanced")
-pheatmap(zscore_down_in_low_Pi_not_enhanced[,1:4] %>% t(),
-         cluster_rows = FALSE,
-         color = viridis(24),
-         main = "not zscore_down_in_low_Pi_not_enhanced genes")
-
-zscore_down_in_low_Pi_phi_enhanced %>% row.names() %>% get_enriched_go_table() -> gos_zscore_down_in_low_Pi_phi_enhanced
-bubbleplot(gos_zscore_down_in_low_Pi_phi_enhanced)
-
-zscore_down_in_low_Pi_not_enhanced %>% row.names() %>% get_enriched_go_table() -> gos_zscore_down_in_low_Pi_not_enhanced
-bubbleplot(gos_zscore_down_in_low_Pi_not_enhanced)
-
-
-ggvenn(list(down_in_low_Pi_not_enhanced =  rownames(zscore_down_in_low_Pi_not_enhanced),
-            down_in_low_Pi_phi_enhanced = rownames(zscore_down_in_low_Pi_phi_enhanced)
-),
-fill_alpha = 0.5,
-stroke_color = "#00000033",
-stroke_size = 1,
-fill_color = viridis(2, end = 0.85, begin = 0.075, option = "B"),
-text_color = "#000000CC"
-)
-
-
-lp_phiVSlp %>% get_rownames(1) -> lp_phiVSlp_up 
-lp_phiVSlp_up %>% get_go_table() -> go_lp_phiVSlp_up
-ggplot(go_lp_phiVSlp_up[(dim(go_lp_phiVSlp_up)[1]-55):dim(go_lp_phiVSlp_up )[1],], aes(x=factor(Term),
-                                                                                       y=log10(Significant))) + 
-  scale_color_viridis_c(option = "D") +
-  geom_segment( aes(xend=factor(Term), yend=0), color=rep(c("#00000055", "#00000025"), 28), size = 1.2) +
-  geom_point(aes(color = logpval, size = log10(recall*100))) +
-  theme_light() +
-  theme(#panel.grid.major.x = element_blank(),
-    panel.grid.major.y = element_blank(),
-    legend.position="top",
-    #panel.ontop = FALSE,
-    panel.background = element_rect(fill = "transparent")) +
-  theme(axis.text.x = element_text(size = 6)) +
-  theme(axis.text.x = element_text(angle = 90),
-        plot.margin=unit(c(1,1,1,1), "cm")
-  ) +
-  #theme(aspect.ratio=3/2) +
-  #scale_y_cut(c(350,1200),which=c(1, 3), scales=c(3,0.3)) +
-  coord_flip() +
-  labs(x = "BP GO Term", y = "log10 of significant genes of go_lp_phiVSlp_up")
-
-lp_phiVSlp %>% get_rownames(-1) -> lp_phiVSlp_down
-lp_phiVSlp_down %>% get_go_table() -> go_lp_phiVSlp_down
-ggplot(go_lp_phiVSlp_down[(dim(go_lp_phiVSlp_down)[1]-55):dim(go_lp_phiVSlp_down )[1],], aes(x=factor(Term),
-                                                                                       y=log10(Significant))) + 
-  scale_color_viridis_c(option = "B", end = 0.9) +
-  geom_segment( aes(xend=factor(Term), yend=0), color=rep(c("#00000055", "#00000025"), 28), size = 1.2) +
-  geom_point(aes(color = logpval, size = log10(recall*100))) +
-  theme_light() +
-  theme(#panel.grid.major.x = element_blank(),
-    panel.grid.major.y = element_blank(),
-    legend.position="top",
-    #panel.ontop = FALSE,
-    panel.background = element_rect(fill = "transparent")) +
-  theme(axis.text.x = element_text(size = 6)) +
-  theme(axis.text.x = element_text(angle = 90),
-        plot.margin=unit(c(1,1,1,1), "cm")
-  ) +
-  #theme(aspect.ratio=3/2) +
-  #scale_y_cut(c(350,1200),which=c(1, 3), scales=c(3,0.3)) +
-  coord_flip() +
-  labs(x = "BP GO Term", y = "log10 of significant genes of go_lp_phiVSlp_up")
-
-
-###
-# GOOD TO THIS POINT  
-###
-
-
-
-###
-#VOLCANO PLOT
-### 
-png(paste0(working_directory, "/Figures/", "lpVShp_lrt volcano plot", ".png"), width = 1200, height = 600, units = "px", res = 100)
-volcano_plot(lpVShp_lrt, n_of_scales = 2, option1= "A", option2 = "G", scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
-dev.off()
-png(paste0(working_directory, "/Figures/", "lpVSlp_phi_lrt volcano plot", ".png"), width = 1200, height = 400, units = "px")
-volcano_plot(lpVSlp_phi_lrt, n_of_scales = 2, option1= "A", option2 = "G", scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
-dev.off()
-png(paste0(working_directory, "/Figures/", "hp_phiVShp_lrt volcano plot", ".png"), width = 1200, height = 400, units = "px")
-volcano_plot(hp_phiVShp_lrt, n_of_scales = 2, option1= "A", option2 = "G", scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
-dev.off()
-png(paste0(working_directory, "/Figures/", "lp_phiVShp_lrt volcano plot", ".png"), width = 1200, height = 400, units = "px")
-volcano_plot(lp_phiVShp_lrt, n_of_scales = 2, option1= "A", option2 = "G", scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
-dev.off()
-png(paste0(working_directory, "/Figures/", "lp_phiVSlp_lrt volcano plot", ".png"), width = 500, height = 500, units = "px")
-volcano_plot(lp_phiVSlp_lrt, n_of_scales = 2, option1= "A", option2 = "G", scales_breaks = c(0.88,0.12), color_breaks = c(0,0.1,0.35,0.6,0.8), reverse_scales = 1)
-dev.off()
-
+} #1 ok
+{
+  #lp_phiVSlp_unique_up
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1),
+                       union(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1),
+                             get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1)
+                       )
+        )
+      ),
+      color = "A", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lp_phiVSlp_unique_up.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+  #lp_phiVSlp_unique_down
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), -1),
+                       union(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), -1),
+                             get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), -1)
+                       )
+        )
+      ),
+      color = "G", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lp_phiVSlp_unique_down.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+} #2 ok
+{
+  #hp_phiVShp_unique_up
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1),
+                       union(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1),
+                             get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1)
+                       )
+        )
+      ),
+      color = "A", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/hp_phiVShp_unique_up.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+  #hp_phiVShp_unique_down
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), -1),
+                       union(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), -1),
+                             get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), -1)
+                       )
+        )
+      ),
+      color = "G", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/hp_phiVShp_unique_down.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+} #3 ok
+{
+  #hp_phiVShp_intersect vs LPivshp
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        (dplyr::intersect(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1), get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1)) %>%
+           setdiff(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1))
+         )
+      ),
+      color = "A", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/hp_phiVShp_intersect_LPivsHP_up.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        (dplyr::intersect(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), -1), get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), -1)) %>%
+           setdiff(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), -1))
+        )
+      ),
+      color = "G", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/hp_phiVShp_intersect_LPivsHP_down.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+  
+} #4 ok
+{
+#lpVShp_intersecct lp_phiVSlp - hp_phiVShp_up
+GOs_plot <-
+  bubbleplot(
+    get_enriched_go_table(
+      dplyr::intersect(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1),
+                       get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1)) %>%
+        dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1))
+    ),
+    color = "A", Terms = 25
+  )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lpVShp_intersect_lp_phiVSlp_up.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+#lpVShp_intersecct lp_phiVSlp - hp_phiVShp_down
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::intersect(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), -1),
+                         get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), -1)) %>%
+          dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), -1))
+      ),
+      color = "G", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lpVShp_intersect_lp_phiVSlp_down.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+} #5 ok
+{
+  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_up
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::intersect(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1), get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1)) %>%
+          dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1))
+      ),
+      color = "A", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lpVShp_intersecct_lp_phiVSlp_up.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_down
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::intersect(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), -1), get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), -1)) %>%
+          dplyr::setdiff(get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), -1))
+      ),
+      color = "G", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/lpVShp_intersecct_lp_phiVSlp_down.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+} #6 ok
+{
+  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_up
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::intersect(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), 1),
+                         dplyr::intersect(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), 1),
+                                          get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), 1))
+        )
+      ),
+      color = "A", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/intersecct_all_up.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+  #lpVShp_intersecct lp_phiVSlp - hp_phiVShp_down
+  GOs_plot <-
+    bubbleplot(
+      get_enriched_go_table(
+        dplyr::intersect(get.rownames(decideTests(data$DEGs_in_lp_phi_relative_to_hp$glmTreat), -1),
+                         dplyr::intersect(get.rownames(decideTests(data$DEGs_in_hp_phi_relative_to_hp$glmTreat), -1),
+                                          get.rownames(decideTests(data$DEGs_in_lp_relative_to_hp$glmTreat), -1))
+        )
+      ),
+      color = "G", Terms = 25
+    )
+  CairoPNG(paste0("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis", "/Figures/GOs plots Venn/intersecct_all_down.png"),
+           width = 600, height = 600, units = 'px')
+  p <- GOs_plot
+  p <-  p + guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5))
+  print(p)
+  dev.off()
+} #7 ok
+
+
+### good to this point
